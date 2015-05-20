@@ -6,6 +6,8 @@
 //
 
 #import "MBXMapKit.h"
+#import "MBXOfflineMapURLGenerator.h"
+#import "MBXDatabaseURLIterator.h"
 
 #import <sqlite3.h>
 
@@ -385,6 +387,7 @@
 
     [_sqliteQueue addOperationWithBlock:^{
         NSError *error;
+        //MBXDatabaseURLIterator *urlItr = [self sqliteReadArrayOfOfflineMapURLsToBeDownloadedWithError:&error];
         NSArray *urls = [self sqliteReadArrayOfOfflineMapURLsToBeDownloadLimit:30 withError:&error];
         if(error)
         {
@@ -579,12 +582,14 @@
     // Read up to limit undownloaded urls from the offline map database
     //
     NSMutableArray *urlArray = [[NSMutableArray alloc] init];
+    //NSString *query = [NSString stringWithFormat:@"SELECT url FROM resources WHERE status IS NULL;\n"];
     NSString *query = [NSString stringWithFormat:@"SELECT url FROM resources WHERE status IS NULL LIMIT %ld;\n",(long)limit];
 
     // Open the database
     //
     sqlite3 *db;
     const char *filename = [_partialDatabasePath cStringUsingEncoding:NSUTF8StringEncoding];
+    //int rc = sqlite3_open_v2(filename, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, NULL);
     int rc = sqlite3_open_v2(filename, &db, SQLITE_OPEN_READONLY, NULL);
     if (rc)
     {
@@ -724,28 +729,24 @@
 }
 
 
-- (BOOL)sqliteCreateDatabaseUsingMetadata:(NSDictionary *)metadata urlArray:(NSArray *)urlStrings withError:(NSError **)error
+- (BOOL)sqliteCreateDatabaseUsingMetadata:(NSDictionary *)metadata urlArray:(NSArray *)urlStrings generator:(MBXOfflineMapURLGenerator*)generator withError:(NSError **)error
 {
     assert(![NSThread isMainThread]);
     BOOL success = NO;
 
     // Build a query to populate the database (map metadata and list of map resource urls)
     //
-    NSMutableString *query = [[NSMutableString alloc] init];
-    [query appendString:@"PRAGMA foreign_keys=ON;\n"];
-    [query appendString:@"BEGIN TRANSACTION;\n"];
-    [query appendString:@"CREATE TABLE metadata (name TEXT UNIQUE, value TEXT);\n"];
-    [query appendString:@"CREATE TABLE data (id INTEGER PRIMARY KEY, value BLOB);\n"];
-    [query appendString:@"CREATE TABLE resources (url TEXT UNIQUE, status TEXT, id INTEGER REFERENCES data);\n"];
+    NSMutableString *createQuery = [[NSMutableString alloc] init];
+    [createQuery appendString:@"PRAGMA foreign_keys=ON;\n"];
+    [createQuery appendString:@"BEGIN TRANSACTION;\n"];
+    [createQuery appendString:@"CREATE TABLE metadata (name TEXT UNIQUE, value TEXT);\n"];
+    [createQuery appendString:@"CREATE TABLE data (id INTEGER PRIMARY KEY, value BLOB);\n"];
+    [createQuery appendString:@"CREATE TABLE resources (url TEXT UNIQUE, status TEXT, id INTEGER REFERENCES data);\n"];
     for(NSString *key in metadata) {
-        [query appendFormat:@"INSERT INTO \"metadata\" VALUES('%@','%@');\n", key, [metadata valueForKey:key]];
+        [createQuery appendFormat:@"INSERT INTO \"metadata\" VALUES('%@','%@');\n", key, [metadata valueForKey:key]];
     }
-    for(NSString *url in urlStrings)
-    {
-        [query appendFormat:@"INSERT INTO \"resources\" VALUES('%@',NULL,NULL);\n",url];
-    }
-    [query appendString:@"COMMIT;"];
-    _totalFilesExpectedToWrite = [urlStrings count];
+    [createQuery appendString:@"COMMIT;"];
+    _totalFilesExpectedToWrite = [urlStrings count] + [generator urlCount];
     _totalFilesWritten = 0;
 
 
@@ -769,20 +770,74 @@
     {
         // Success! Creating the database file worked, so now populate the tables we'll need to hold the offline map
         //
-        const char *zSql = [query cStringUsingEncoding:NSUTF8StringEncoding];
-        char *errmsg;
-        sqlite3_exec(db, zSql, NULL, NULL, &errmsg);
-        if(error && errmsg != NULL)
-        {
-            *error = [NSError mbx_errorQueryFailedForOfflineMapDatabase:_partialDatabasePath sqliteError:errmsg];
-            sqlite3_free(errmsg);
-        }
-        sqlite3_close(db);
         success = YES;
+        NSString *imageQualityExtension;
+        NSString *transactionStartQuery;
+        NSString *transactionEndQuery;
+        success = [self executeQuery:createQuery onDatabase:db withError:error];
+        if (!success)
+        {
+            goto afterInsertions;
+        }
+        
+        transactionStartQuery = @"BEGIN TRANSACTION;";
+        success = [self executeQuery:transactionStartQuery onDatabase:db withError:error];
+        if (!success)
+        {
+            goto afterInsertions;
+        }
+        
+        for (NSString * url in urlStrings)
+        {
+            NSString *query = [NSString stringWithFormat:@"INSERT INTO \"resources\" VALUES('%@',NULL,NULL);\n", url];
+            success = [self executeQuery:query onDatabase:db withError:error];
+            if (!success)
+            {
+                goto afterInsertions;
+            }
+        }
+        
+        imageQualityExtension = [MBXRasterTileOverlay qualityExtensionForImageQuality:_imageQuality];
+        for (NSInteger generatedIndex = 0; generatedIndex < [generator urlCount]; generatedIndex++)
+        {
+            NSString *url = [generator urlForIndex:generatedIndex mapID:_mapID imageQualityExtension:imageQualityExtension];
+            NSString *query = [NSString stringWithFormat:@"INSERT INTO \"resources\" VALUES('%@',NULL,NULL);\n", url];
+            success = [self executeQuery:query onDatabase:db withError:error];
+            if (!success)
+            {
+                goto afterInsertions;
+            }
+        }
+        
+        transactionEndQuery = @"COMMIT;";
+        success = [self executeQuery:transactionEndQuery onDatabase:db withError:error];
+        if (!success)
+        {
+            goto afterInsertions;
+        }
+        
+afterInsertions:
+        sqlite3_close(db);
     }
     return success;
 }
 
+- (BOOL) executeQuery:(NSString*)query onDatabase:(sqlite3 *)db withError:(NSError **)error
+{
+    const char *zSql = [query cStringUsingEncoding:NSUTF8StringEncoding];
+    char *errmsg;
+    sqlite3_exec(db, zSql, NULL, NULL, &errmsg);
+    if (errmsg != NULL)
+    {
+        if (error)
+        {
+            *error = [NSError mbx_errorQueryFailedForOfflineMapDatabase:_partialDatabasePath sqliteError:errmsg];
+        }
+        sqlite3_free(errmsg);
+        return NO;
+    }
+    return YES;
+}
 
 #pragma mark - API: Begin an offline map download
 
@@ -858,43 +913,7 @@
         CLLocationDegrees maxLat = minLat + mapRegion.span.latitudeDelta;
         CLLocationDegrees minLon = mapRegion.center.longitude - (mapRegion.span.longitudeDelta / 2.0);
         CLLocationDegrees maxLon = minLon + mapRegion.span.longitudeDelta;
-        NSUInteger minX;
-        NSUInteger maxX;
-        NSUInteger minY;
-        NSUInteger maxY;
-        NSUInteger tilesPerSide;
-        for(NSUInteger zoom = minimumZ; zoom <= maximumZ; zoom++)
-        {
-            tilesPerSide = pow(2.0, zoom);
-            minX = floor(((minLon + 180.0) / 360.0) * tilesPerSide);
-            maxX = floor(((maxLon + 180.0) / 360.0) * tilesPerSide);
-            minY = floor((1.0 - (logf(tanf(maxLat * M_PI / 180.0) + 1.0 / cosf(maxLat * M_PI / 180.0)) / M_PI)) / 2.0 * tilesPerSide);
-            maxY = floor((1.0 - (logf(tanf(minLat * M_PI / 180.0) + 1.0 / cosf(minLat * M_PI / 180.0)) / M_PI)) / 2.0 * tilesPerSide);
-            for(NSUInteger x=minX; x<=maxX; x++)
-            {
-                for(NSUInteger y=minY; y<=maxY; y++)
-                {
-                    [urls addObject:[NSString stringWithFormat:@"https://a.tiles.mapbox.com/v4/%@/%ld/%ld/%ld%@.%@%@",
-                                     mapID,
-                                     (long)zoom,
-                                     (long)x,
-                                     (long)y,
-#if TARGET_OS_IPHONE
-                                     [[UIScreen mainScreen] scale] > 1.0 ? @"@2x" : @"",
-#else
-                                     // Making this smart enough to handle a Retina MacBook with a normal dpi external display
-                                     // is complicated. For now, just default to @1x images and a 1.0 scale.
-                                     //
-                                     @"",
-#endif
-                                     [MBXRasterTileOverlay qualityExtensionForImageQuality:_imageQuality],
-                                     [@"?access_token=" stringByAppendingString:[MBXMapKit accessToken]]
-                                     ]
-                     ];
-                }
-            }
-        }
-
+        MBXOfflineMapURLGenerator * generator = [[MBXOfflineMapURLGenerator alloc] initWithMinLat:minLat maxLat:maxLat minLon:minLon maxLon:maxLon minimumZ:minimumZ maximumZ:maximumZ];
 
         // Determine if we need to add marker icon urls (i.e. parse markers.geojson/features.json), and if so, add them
         //
@@ -951,7 +970,7 @@
                     // Create the database and start the download
                     //
                     NSError *error;
-                    [self sqliteCreateDatabaseUsingMetadata:metadataDictionary urlArray:urls withError:&error];
+                    [self sqliteCreateDatabaseUsingMetadata:metadataDictionary urlArray:urls generator:generator withError:&error];
                     if(error)
                     {
                         [self cancelImmediatelyWithError:error];
@@ -970,7 +989,7 @@
             // There aren't any marker icons to worry about, so just create database and start downloading
             //
             NSError *error;
-            [self sqliteCreateDatabaseUsingMetadata:metadataDictionary urlArray:urls withError:&error];
+            [self sqliteCreateDatabaseUsingMetadata:metadataDictionary urlArray:urls generator:generator withError:&error];
             if(error)
             {
                 [self cancelImmediatelyWithError:error];
