@@ -35,6 +35,8 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, NSError *error
 
 - (NSData *)dataForURL:(NSURL *)url withError:(NSError **)error;
 
+- (void) closeDatabaseIfNeeded;
+
 @end
 
 
@@ -282,6 +284,10 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, NSError *error
 {
     _delegate = nil;
     _sessionHasBeenInvalidated = YES;
+    if (_offlineMapDatabase)
+    {
+        [_offlineMapDatabase closeDatabaseIfNeeded];
+    }
 }
 
 

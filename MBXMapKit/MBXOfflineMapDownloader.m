@@ -57,8 +57,9 @@
 @property (readwrite, nonatomic) NSInteger minimumZ;
 @property (readwrite, nonatomic) NSInteger maximumZ;
 @property (readwrite, nonatomic) MBXOfflineMapDownloaderState state;
-@property (readwrite,nonatomic) NSUInteger totalFilesWritten;
-@property (readwrite,nonatomic) NSUInteger totalFilesExpectedToWrite;
+@property (readwrite, nonatomic) NSUInteger totalFilesWritten;
+@property (readwrite, nonatomic) NSUInteger totalFilesExpectedToWrite;
+@property (readwrite, nonatomic) sqlite3 *db;
 
 @property (nonatomic) NSMutableArray *mutableOfflineMapDatabases;
 @property (nonatomic) NSString *partialDatabasePath;
@@ -456,76 +457,62 @@
         // Open the database read-write and multi-threaded. The slightly obscure c-style variable names here and below are
         // used to stay consistent with the sqlite documentaion.
         NSError *error;
-        sqlite3 *db;
-        int rc;
-        const char *filename = [_partialDatabasePath cStringUsingEncoding:NSUTF8StringEncoding];
-        rc = sqlite3_open_v2(filename, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, NULL);
-        if (rc)
+
+        // Creating the database file worked, so now start an atomic commit
+        //
+        NSMutableString *query = [[NSMutableString alloc] init];
+        [query appendString:@"PRAGMA foreign_keys=ON;\n"];
+        [query appendString:@"BEGIN TRANSACTION;\n"];
+        const char *zSql = [query cStringUsingEncoding:NSUTF8StringEncoding];
+        char *errmsg;
+        sqlite3_exec(_db, zSql, NULL, NULL, &errmsg);
+        if(errmsg)
         {
-            // Opening the database failed... something is very wrong.
-            //
-            error = [NSError mbx_errorCannotOpenOfflineMapDatabase:_partialDatabasePath sqliteError:sqlite3_errmsg(db)];
+            error = [NSError mbx_errorQueryFailedForOfflineMapDatabase:_partialDatabasePath sqliteError:errmsg];
+            sqlite3_free(errmsg);
         }
         else
         {
-            // Creating the database file worked, so now start an atomic commit
+            // Continue by inserting an image blob into the data table
             //
-            NSMutableString *query = [[NSMutableString alloc] init];
-            [query appendString:@"PRAGMA foreign_keys=ON;\n"];
-            [query appendString:@"BEGIN TRANSACTION;\n"];
-            const char *zSql = [query cStringUsingEncoding:NSUTF8StringEncoding];
-            char *errmsg;
-            sqlite3_exec(db, zSql, NULL, NULL, &errmsg);
-            if(errmsg)
+            NSString *query2 = @"INSERT INTO data(value) VALUES(?);";
+            const char *zSql2 = [query2 cStringUsingEncoding:NSUTF8StringEncoding];
+            int nByte2 = (int)[query2 lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
+            sqlite3_stmt *ppStmt2;
+            const char *pzTail2;
+            BOOL successfulBlobInsert = NO;
+            if(sqlite3_prepare_v2(_db, zSql2, nByte2, &ppStmt2, &pzTail2) == SQLITE_OK)
             {
-                error = [NSError mbx_errorQueryFailedForOfflineMapDatabase:_partialDatabasePath sqliteError:errmsg];
-                sqlite3_free(errmsg);
+                if(sqlite3_bind_blob(ppStmt2, 1, [data bytes], (int)[data length], SQLITE_TRANSIENT) == SQLITE_OK)
+                {
+                    if(sqlite3_step(ppStmt2) == SQLITE_DONE)
+                    {
+                        successfulBlobInsert = YES;
+                    }
+                }
             }
-            else
+            if(!successfulBlobInsert)
             {
-                // Continue by inserting an image blob into the data table
-                //
-                NSString *query2 = @"INSERT INTO data(value) VALUES(?);";
-                const char *zSql2 = [query2 cStringUsingEncoding:NSUTF8StringEncoding];
-                int nByte2 = (int)[query2 lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
-                sqlite3_stmt *ppStmt2;
-                const char *pzTail2;
-                BOOL successfulBlobInsert = NO;
-                if(sqlite3_prepare_v2(db, zSql2, nByte2, &ppStmt2, &pzTail2) == SQLITE_OK)
-                {
-                    if(sqlite3_bind_blob(ppStmt2, 1, [data bytes], (int)[data length], SQLITE_TRANSIENT) == SQLITE_OK)
-                    {
-                        if(sqlite3_step(ppStmt2) == SQLITE_DONE)
-                        {
-                            successfulBlobInsert = YES;
-                        }
-                    }
-                }
-                if(!successfulBlobInsert)
-                {
-                    error = [NSError mbx_errorQueryFailedForOfflineMapDatabase:_partialDatabasePath sqliteError:sqlite3_errmsg(db)];
-                }
-                sqlite3_finalize(ppStmt2);
+                error = [NSError mbx_errorQueryFailedForOfflineMapDatabase:_partialDatabasePath sqliteError:sqlite3_errmsg(_db)];
+            }
+            sqlite3_finalize(ppStmt2);
 
-                // Finish up by updating the url in the resources table with status and the blob id, then close out the commit
-                //
-                if(!error)
+            // Finish up by updating the url in the resources table with status and the blob id, then close out the commit
+            //
+            if(!error)
+            {
+                query  = [[NSMutableString alloc] init];
+                [query appendFormat:@"UPDATE resources SET status=200,id=last_insert_rowid() WHERE url='%@';\n",[url absoluteString]];
+                [query appendString:@"COMMIT;"];
+                const char *zSql3 = [query cStringUsingEncoding:NSUTF8StringEncoding];
+                sqlite3_exec(_db, zSql3, NULL, NULL, &errmsg);
+                if(errmsg)
                 {
-                    query  = [[NSMutableString alloc] init];
-                    [query appendFormat:@"UPDATE resources SET status=200,id=last_insert_rowid() WHERE url='%@';\n",[url absoluteString]];
-                    [query appendString:@"COMMIT;"];
-                    const char *zSql3 = [query cStringUsingEncoding:NSUTF8StringEncoding];
-                    sqlite3_exec(db, zSql3, NULL, NULL, &errmsg);
-                    if(errmsg)
-                    {
-                        error = [NSError mbx_errorQueryFailedForOfflineMapDatabase:_partialDatabasePath sqliteError:errmsg];
-                        sqlite3_free(errmsg);
-                    }
+                    error = [NSError mbx_errorQueryFailedForOfflineMapDatabase:_partialDatabasePath sqliteError:errmsg];
+                    sqlite3_free(errmsg);
                 }
-
             }
         }
-        sqlite3_close(db);
 
         if(error)
         {
@@ -548,6 +535,8 @@
                 {
                     // This is what to do when we've downloaded all the files
                     //
+                    sqlite3_close(_db);
+                    _db = NULL;
                     MBXOfflineMapDatabase *offlineMap = [self completeDatabaseAndInstantiateOfflineMapWithError:&error];
                     if(offlineMap && !error) {
                         [_mutableOfflineMapDatabases addObject:offlineMap];
@@ -585,72 +574,53 @@
     //NSString *query = [NSString stringWithFormat:@"SELECT url FROM resources WHERE status IS NULL;\n"];
     NSString *query = [NSString stringWithFormat:@"SELECT url FROM resources WHERE status IS NULL LIMIT %ld;\n",(long)limit];
 
-    // Open the database
+    // Success! First prepare the query...
     //
-    sqlite3 *db;
-    const char *filename = [_partialDatabasePath cStringUsingEncoding:NSUTF8StringEncoding];
-    //int rc = sqlite3_open_v2(filename, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, NULL);
-    int rc = sqlite3_open_v2(filename, &db, SQLITE_OPEN_READONLY, NULL);
+    const char *zSql = [query cStringUsingEncoding:NSUTF8StringEncoding];
+    int nByte = (int)[query lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
+    sqlite3_stmt *ppStmt;
+    const char *pzTail;
+    int rc = sqlite3_prepare_v2(_db, zSql, nByte, &ppStmt, &pzTail);
     if (rc)
     {
-        // Opening the database failed... something is very wrong.
+        // Preparing the query didn't work.
         //
         if(error)
         {
-            *error = [NSError mbx_errorCannotOpenOfflineMapDatabase:_partialDatabasePath sqliteError:sqlite3_errmsg(db)];
+            *error = [NSError mbx_errorQueryFailedForOfflineMapDatabase:_partialDatabasePath sqliteError:sqlite3_errmsg(_db)];
         }
     }
     else
     {
-        // Success! First prepare the query...
+        // Evaluate the query
         //
-        const char *zSql = [query cStringUsingEncoding:NSUTF8StringEncoding];
-        int nByte = (int)[query lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
-        sqlite3_stmt *ppStmt;
-        const char *pzTail;
-        rc = sqlite3_prepare_v2(db, zSql, nByte, &ppStmt, &pzTail);
-        if (rc)
+        BOOL keepGoing = YES;
+        while(keepGoing)
         {
-            // Preparing the query didn't work.
-            //
-            if(error)
+            rc = sqlite3_step(ppStmt);
+            if(rc == SQLITE_ROW && sqlite3_column_count(ppStmt)==1)
             {
-                *error = [NSError mbx_errorQueryFailedForOfflineMapDatabase:_partialDatabasePath sqliteError:sqlite3_errmsg(db)];
+                // Success! We got a URL row, so add it to the array
+                //
+                [urlArray addObject:[NSURL URLWithString:[NSString stringWithUTF8String:(const char *)sqlite3_column_text(ppStmt, 0)]]];
             }
-        }
-        else
-        {
-            // Evaluate the query
-            //
-            BOOL keepGoing = YES;
-            while(keepGoing)
+            else if(rc == SQLITE_DONE)
             {
-                rc = sqlite3_step(ppStmt);
-                if(rc == SQLITE_ROW && sqlite3_column_count(ppStmt)==1)
+                keepGoing = NO;
+            }
+            else
+            {
+                // Something unexpected happened.
+                //
+                keepGoing = NO;
+                if(error)
                 {
-                    // Success! We got a URL row, so add it to the array
-                    //
-                    [urlArray addObject:[NSURL URLWithString:[NSString stringWithUTF8String:(const char *)sqlite3_column_text(ppStmt, 0)]]];
-                }
-                else if(rc == SQLITE_DONE)
-                {
-                    keepGoing = NO;
-                }
-                else
-                {
-                    // Something unexpected happened.
-                    //
-                    keepGoing = NO;
-                    if(error)
-                    {
-                        *error = [NSError mbx_errorQueryFailedForOfflineMapDatabase:_partialDatabasePath sqliteError:sqlite3_errmsg(db)];
-                    }
+                    *error = [NSError mbx_errorQueryFailedForOfflineMapDatabase:_partialDatabasePath sqliteError:sqlite3_errmsg(_db)];
                 }
             }
         }
-        sqlite3_finalize(ppStmt);
     }
-    sqlite3_close(db);
+    sqlite3_finalize(ppStmt);
 
     return [NSArray arrayWithArray:urlArray];
 }
@@ -666,64 +636,44 @@
     NSString *query = @"SELECT COUNT(url) AS totalFilesExpectedToWrite, (SELECT COUNT(url) FROM resources WHERE status IS NOT NULL) AS totalFilesWritten FROM resources;\n";
 
     BOOL success = NO;
-    // Open the database
-    //
-    sqlite3 *db;
-    const char *filename = [_partialDatabasePath cStringUsingEncoding:NSUTF8StringEncoding];
-    int rc = sqlite3_open_v2(filename, &db, SQLITE_OPEN_READONLY, NULL);
+    const char *zSql = [query cStringUsingEncoding:NSUTF8StringEncoding];
+    int nByte = (int)[query lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
+    sqlite3_stmt *ppStmt;
+    const char *pzTail;
+    int rc = sqlite3_prepare_v2(_db, zSql, nByte, &ppStmt, &pzTail);
     if (rc)
     {
-        // Opening the database failed... something is very wrong.
+        // Preparing the query didn't work.
         //
         if(error)
         {
-            *error = [NSError mbx_errorCannotOpenOfflineMapDatabase:_partialDatabasePath sqliteError:sqlite3_errmsg(db)];
+            *error = [NSError mbx_errorQueryFailedForOfflineMapDatabase:_partialDatabasePath sqliteError:sqlite3_errmsg(_db)];
         }
     }
     else
     {
-        // Success! First prepare the query...
+        // Evaluate the query
         //
-        const char *zSql = [query cStringUsingEncoding:NSUTF8StringEncoding];
-        int nByte = (int)[query lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
-        sqlite3_stmt *ppStmt;
-        const char *pzTail;
-        rc = sqlite3_prepare_v2(db, zSql, nByte, &ppStmt, &pzTail);
-        if (rc)
+        rc = sqlite3_step(ppStmt);
+        if (rc == SQLITE_ROW && sqlite3_column_count(ppStmt)==2)
         {
-            // Preparing the query didn't work.
+            // Success! We got a row with the counts for resource files
             //
-            if(error)
-            {
-                *error = [NSError mbx_errorQueryFailedForOfflineMapDatabase:_partialDatabasePath sqliteError:sqlite3_errmsg(db)];
-            }
+            _totalFilesExpectedToWrite = [[NSString stringWithUTF8String:(const char *)sqlite3_column_text(ppStmt, 0)] integerValue];
+            _totalFilesWritten = [[NSString stringWithUTF8String:(const char *)sqlite3_column_text(ppStmt, 1)] integerValue];
+            success = YES;
         }
         else
         {
-            // Evaluate the query
+            // Something unexpected happened.
             //
-            rc = sqlite3_step(ppStmt);
-            if (rc == SQLITE_ROW && sqlite3_column_count(ppStmt)==2)
+            if(error)
             {
-                // Success! We got a row with the counts for resource files
-                //
-                _totalFilesExpectedToWrite = [[NSString stringWithUTF8String:(const char *)sqlite3_column_text(ppStmt, 0)] integerValue];
-                _totalFilesWritten = [[NSString stringWithUTF8String:(const char *)sqlite3_column_text(ppStmt, 1)] integerValue];
-                success = YES;
-            }
-            else
-            {
-                // Something unexpected happened.
-                //
-                if(error)
-                {
-                    *error = [NSError mbx_errorQueryFailedForOfflineMapDatabase:_partialDatabasePath sqliteError:sqlite3_errmsg(db)];
-                }
+                *error = [NSError mbx_errorQueryFailedForOfflineMapDatabase:_partialDatabasePath sqliteError:sqlite3_errmsg(_db)];
             }
         }
-        sqlite3_finalize(ppStmt);
     }
-    sqlite3_close(db);
+    sqlite3_finalize(ppStmt);
 
     return success;
 }
@@ -732,7 +682,6 @@
 - (BOOL)sqliteCreateDatabaseUsingMetadata:(NSDictionary *)metadata urlArray:(NSArray *)urlStrings generator:(MBXOfflineMapURLGenerator*)generator withError:(NSError **)error
 {
     assert(![NSThread isMainThread]);
-    BOOL success = NO;
 
     // Build a query to populate the database (map metadata and list of map resource urls)
     //
@@ -752,48 +701,46 @@
 
     // Open the database read-write and multi-threaded. The slightly obscure c-style variable names here and below are
     // used to stay consistent with the sqlite documentaion.
-    sqlite3 *db;
     int rc;
     const char *filename = [_partialDatabasePath cStringUsingEncoding:NSUTF8StringEncoding];
-    rc = sqlite3_open_v2(filename, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, NULL);
+    rc = sqlite3_open_v2(filename, &_db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, NULL);
     if (rc)
     {
         // Opening the database failed... something is very wrong.
         //
         if(error != NULL)
         {
-            *error = [NSError mbx_errorCannotOpenOfflineMapDatabase:_partialDatabasePath sqliteError:sqlite3_errmsg(db)];
+            *error = [NSError mbx_errorCannotOpenOfflineMapDatabase:_partialDatabasePath sqliteError:sqlite3_errmsg(_db)];
         }
-        sqlite3_close(db);
+        return NO;
     }
     else
     {
         // Success! Creating the database file worked, so now populate the tables we'll need to hold the offline map
         //
-        success = YES;
         NSString *imageQualityExtension;
         NSString *transactionStartQuery;
         NSString *transactionEndQuery;
-        success = [self executeQuery:createQuery onDatabase:db withError:error];
+        BOOL success = [self executeQuery:createQuery onDatabase:_db withError:error];
         if (!success)
         {
-            goto afterInsertions;
+            return NO;
         }
         
         transactionStartQuery = @"BEGIN TRANSACTION;";
-        success = [self executeQuery:transactionStartQuery onDatabase:db withError:error];
+        success = [self executeQuery:transactionStartQuery onDatabase:_db withError:error];
         if (!success)
         {
-            goto afterInsertions;
+            return NO;
         }
         
         for (NSString * url in urlStrings)
         {
             NSString *query = [NSString stringWithFormat:@"INSERT INTO \"resources\" VALUES('%@',NULL,NULL);\n", url];
-            success = [self executeQuery:query onDatabase:db withError:error];
+            success = [self executeQuery:query onDatabase:_db withError:error];
             if (!success)
             {
-                goto afterInsertions;
+                return NO;
             }
         }
         
@@ -802,24 +749,21 @@
         {
             NSString *url = [generator urlForIndex:generatedIndex mapID:_mapID imageQualityExtension:imageQualityExtension];
             NSString *query = [NSString stringWithFormat:@"INSERT INTO \"resources\" VALUES('%@',NULL,NULL);\n", url];
-            success = [self executeQuery:query onDatabase:db withError:error];
+            success = [self executeQuery:query onDatabase:_db withError:error];
             if (!success)
             {
-                goto afterInsertions;
+                return NO;
             }
         }
         
         transactionEndQuery = @"COMMIT;";
-        success = [self executeQuery:transactionEndQuery onDatabase:db withError:error];
+        success = [self executeQuery:transactionEndQuery onDatabase:_db withError:error];
         if (!success)
         {
-            goto afterInsertions;
+            return NO;
         }
-        
-afterInsertions:
-        sqlite3_close(db);
     }
-    return success;
+    return YES;
 }
 
 - (BOOL) executeQuery:(NSString*)query onDatabase:(sqlite3 *)db withError:(NSError **)error
@@ -1071,6 +1015,8 @@ afterInsertions:
     [_sqliteQueue cancelAllOperations];
 
     [_sqliteQueue addOperationWithBlock:^{
+        sqlite3_close(_db);
+        _db = NULL;
         [self setUpNewDataSession];
         _totalFilesWritten = 0;
         _totalFilesExpectedToWrite = 0;

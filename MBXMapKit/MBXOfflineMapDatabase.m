@@ -36,6 +36,7 @@
 @property (readwrite, nonatomic) NSInteger maximumZ;
 @property (readwrite, nonatomic) NSString *path;
 @property (readwrite, nonatomic) BOOL invalid;
+@property (readwrite, nonatomic) sqlite3 *db;
 
 @property (nonatomic) BOOL initializedProperly;
 
@@ -113,6 +114,7 @@
             self = nil;
         }
     }
+    [self closeDatabaseIfNeeded];
 
     return self;
 }
@@ -177,8 +179,9 @@
 - (NSData *)sqliteDataForSingleColumnQuery:(NSString *)query
 {
     // MBXMapKit expects libsqlite to have been compiled with SQLITE_THREADSAFE=2 (multi-thread mode), which means
-    // that it can handle its own thread safety as long as you don't attempt to re-use database connections.
-    // Since the queries here are all SELECT's, locking for writes shouldn't be an issue.
+    // that it can handle its own thread safety.
+    // We need to open the sqlite database in serialized mode (SQLITE_OPEN_FULLMUTEX), and sqlite3_threadsafe()==2 guarantees that
+    // that thread safety mode is available.
     // Some relevant sqlite documentation:
     // - http://sqlite.org/faq.html#q5
     // - http://www.sqlite.org/threadsafe.html
@@ -189,15 +192,17 @@
 
     // Open the database read-only and multi-threaded. The slightly obscure c-style variable names here and below are
     // used to stay consistent with the sqlite documentaion. See http://sqlite.org/c3ref/open.html
-    sqlite3 *db;
     int rc;
-    const char *filename = [_path cStringUsingEncoding:NSUTF8StringEncoding];
-    rc = sqlite3_open_v2(filename, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, NULL);
-    if (rc)
+    if (_db == NULL)
     {
-        NSLog(@"Can't open database %@: %s", _path, sqlite3_errmsg(db));
-        sqlite3_close(db);
-        return nil;
+        const char *filename = [_path cStringUsingEncoding:NSUTF8StringEncoding];
+        rc = sqlite3_open_v2(filename, &_db, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, NULL);
+        if (rc)
+        {
+            NSLog(@"Can't open database %@: %s", _path, sqlite3_errmsg(_db));
+            sqlite3_close(_db);
+            return nil;
+        }
     }
 
     // Prepare the query, see http://sqlite.org/c3ref/prepare.html
@@ -205,12 +210,11 @@
     int nByte = (int)[query lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
     sqlite3_stmt *ppStmt;
     const char *pzTail;
-    rc = sqlite3_prepare_v2(db, zSql, nByte, &ppStmt, &pzTail);
+    rc = sqlite3_prepare_v2(_db, zSql, nByte, &ppStmt, &pzTail);
     if (rc)
     {
-        NSLog(@"Problem preparing sql statement: %s", sqlite3_errmsg(db));
+        NSLog(@"Problem preparing sql statement: %s", sqlite3_errmsg(_db));
         sqlite3_finalize(ppStmt);
-        sqlite3_close(db);
         return nil;
     }
 
@@ -243,13 +247,21 @@
     }
     else
     {
-        NSLog(@"sqlite3_step() produced an error: %s", sqlite3_errmsg(db));
+        NSLog(@"sqlite3_step() produced an error: %s", sqlite3_errmsg(_db));
     }
 
     // Clean up
     sqlite3_finalize(ppStmt);
-    sqlite3_close(db);
     return data;
+}
+
+- (void) closeDatabaseIfNeeded
+{
+    if (_db != NULL)
+    {
+        sqlite3_close(_db);
+        _db = NULL;
+    }
 }
 
 @end
