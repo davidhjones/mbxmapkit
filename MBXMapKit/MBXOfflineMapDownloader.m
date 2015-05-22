@@ -68,7 +68,6 @@
 @property (nonatomic) NSOperationQueue *backgroundWorkQueue;
 @property (nonatomic) NSOperationQueue *sqliteQueue;
 @property (nonatomic) NSURLSession *dataSession;
-@property (nonatomic) NSInteger activeDataSessionTasks;
 
 @end
 
@@ -248,7 +247,6 @@
     config.URLCache = [NSURLCache sharedURLCache];
     config.HTTPAdditionalHeaders = @{ @"User-Agent" : [MBXMapKit userAgent] };
     _dataSession = [NSURLSession sessionWithConfiguration:config];
-    _activeDataSessionTasks = 0;
 }
 
 
@@ -388,74 +386,128 @@
 
     [_sqliteQueue addOperationWithBlock:^{
         NSError *error;
-        //MBXDatabaseURLIterator *urlItr = [self sqliteReadArrayOfOfflineMapURLsToBeDownloadedWithError:&error];
-        NSArray *urls = [self sqliteReadArrayOfOfflineMapURLsToBeDownloadLimit:30 withError:&error];
+        MBXDatabaseURLIterator *urlItr = [self sqliteReadArrayOfOfflineMapURLsToBeDownloadedWithError:&error];
         if(error)
         {
             NSLog(@"Error while reading offline map urls: %@",error);
         }
         else
         {
-            for(NSURL *url in urls)
+            if (![urlItr hasNext])
             {
-                NSURLSessionDataTask *task;
-                NSURLRequest *request = [NSURLRequest requestWithURL:url cachePolicy:NSURLRequestUseProtocolCachePolicy timeoutInterval:60];
-                _activeDataSessionTasks += 1;
-                task = [_dataSession dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error)
+                [self allFilesDownloaded];
+            }
+            else
+            {
+                for (int i = 0; i < 8; i++)
                 {
-                    if(error  && _state == MBXOfflineMapDownloaderStateRunning)
-                    {
-                        // We got a session level error which probably indicates a connectivity problem such as airplane mode.
-                        // Notify the delegate.
-                        //
-                        [self notifyDelegateOfNetworkConnectivityError:error];
-                    }
-                    if(!error  && _state == MBXOfflineMapDownloaderStateRunning)
-                    {
-                        if ([response isKindOfClass:[NSHTTPURLResponse class]] && ((NSHTTPURLResponse *)response).statusCode != 200)
-                        {
-                            // This url didn't work. For now, use the primitive error handling method of notifying the delegate and
-                            // continuing to request the url (this will eventually cycle back through the download queue since we're
-                            // not marking the url as done in the database).
-                            //
-                            [self notifyDelegateOfHTTPStatusError:((NSHTTPURLResponse *)response).statusCode url:response.URL];
-                        }
-                        else
-                        {
-                            // Since the URL was successfully retrieved, save the data
-                            //
-                            [self sqliteSaveDownloadedData:data forURL:url];
-                        }
-                    }
-                }];
-                [task resume];
-
-                // This is the last line of the for loop
+                    [self startSingleTileWithIterator:urlItr];
+                }
             }
         }
     }];
-
 }
 
+- (void) startSingleTileWithIterator:(MBXDatabaseURLIterator*)itr
+{
+    if (_state != MBXOfflineMapDownloaderStateRunning)
+    {
+        return;
+    }
+
+    if ([itr hasNext]) {
+        NSURL *nextUrl = [itr next];
+        NSURLSessionDataTask *task;
+        NSURLRequest *request = [NSURLRequest requestWithURL:nextUrl cachePolicy:NSURLRequestUseProtocolCachePolicy timeoutInterval:60];
+        task = [_dataSession dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error)
+        {
+            if (error && _state == MBXOfflineMapDownloaderStateRunning)
+            {
+                // We got a session level error which probably indicates a connectivity problem such as airplane mode.
+                // Notify the delegate.
+                //
+                [self notifyDelegateOfNetworkConnectivityError:error];
+            }
+            if (!error)
+            {
+                if ([response isKindOfClass:[NSHTTPURLResponse class]] && ((NSHTTPURLResponse *)response).statusCode != 200)
+                {
+                    if (_state == MBXOfflineMapDownloaderStateRunning)
+                    {
+                        // This url didn't work. For now, use the primitive error handling method of notifying the delegate and
+                        // continuing to request the url (this will eventually cycle back through the download queue since we're
+                        // not marking the url as done in the database).
+                        //
+                        [self notifyDelegateOfHTTPStatusError:((NSHTTPURLResponse *)response).statusCode url:response.URL];
+                    }
+                }
+                else if (_state != MBXOfflineMapDownloaderStateCanceling && _state != MBXOfflineMapDownloaderStateAvailable)
+                {
+                    // Since the URL was successfully retrieved, save the data
+                    //
+                    [self sqliteSaveDownloadedData:data forURL:nextUrl];
+                }
+            }
+
+            if (_state != MBXOfflineMapDownloaderStateCanceling && _state != MBXOfflineMapDownloaderStateAvailable)
+            {
+                [self markOneFileDownloaded];
+            }
+            
+            if (_state == MBXOfflineMapDownloaderStateRunning)
+            {
+                [_sqliteQueue addOperationWithBlock:^{
+                    [self startSingleTileWithIterator:itr];
+                }];
+            }
+        }];
+        [task resume];
+    }
+}
 
 #pragma mark - Implementation: sqlite stuff
+- (void)markOneFileDownloaded
+{
+    [_sqliteQueue addOperationWithBlock:^{
+        // Update the progress
+        //
+        _totalFilesWritten += 1;
+        [self notifyDelegateOfProgress];
+        // If all the downloads are done, clean up and notify the delegate
+        //
+        if(_totalFilesWritten >= _totalFilesExpectedToWrite)
+        {
+            [self allFilesDownloaded];
+        }
+    }];
+}
+
+- (void)allFilesDownloaded
+{
+    NSError *error;
+    // This is what to do when we've downloaded all the files
+    //
+    [self closeDatabaseIfNeeded];
+    MBXOfflineMapDatabase *offlineMap = [self completeDatabaseAndInstantiateOfflineMapWithError:&error];
+    if(offlineMap && !error) {
+        [_mutableOfflineMapDatabases addObject:offlineMap];
+    }
+    [self notifyDelegateOfCompletionWithOfflineMapDatabase:offlineMap withError:error];
+
+    _state = MBXOfflineMapDownloaderStateAvailable;
+    [self notifyDelegateOfStateChange];
+}
 
 - (void)sqliteSaveDownloadedData:(NSData *)data forURL:(NSURL *)url
 {
     assert(![NSThread isMainThread]);
-    assert(_activeDataSessionTasks > 0);
 
     [_sqliteQueue addOperationWithBlock:^{
-
-        // Bail out if the state has changed to canceling, suspended, or available
-        //
-        if(_state != MBXOfflineMapDownloaderStateRunning)
+        if (_db == NULL)
         {
             return;
         }
 
-        // Open the database read-write and multi-threaded. The slightly obscure c-style variable names here and below are
-        // used to stay consistent with the sqlite documentaion.
         NSError *error;
 
         // Creating the database file worked, so now start an atomic commit
@@ -512,67 +564,31 @@
                     sqlite3_free(errmsg);
                 }
             }
-        }
-
-        if(error)
-        {
-            // Oops, that didn't work. Notify the delegate.
-            //
-            [self notifyDelegateOfSqliteError:error];
-        }
-        else
-        {
-            // Update the progress
-            //
-            _totalFilesWritten += 1;
-            [self notifyDelegateOfProgress];
-
-            // If all the downloads are done, clean up and notify the delegate
-            //
-            if(_totalFilesWritten >= _totalFilesExpectedToWrite)
+            
+            if(error)
             {
-                if(_state == MBXOfflineMapDownloaderStateRunning)
-                {
-                    // This is what to do when we've downloaded all the files
-                    //
-                    sqlite3_close(_db);
-                    _db = NULL;
-                    MBXOfflineMapDatabase *offlineMap = [self completeDatabaseAndInstantiateOfflineMapWithError:&error];
-                    if(offlineMap && !error) {
-                        [_mutableOfflineMapDatabases addObject:offlineMap];
-                    }
-                    [self notifyDelegateOfCompletionWithOfflineMapDatabase:offlineMap withError:error];
-
-                    _state = MBXOfflineMapDownloaderStateAvailable;
-                    [self notifyDelegateOfStateChange];
-                }
+                // Oops, that didn't work. Notify the delegate.
+                //
+                [self notifyDelegateOfSqliteError:error];
             }
-        }
-
-        // If this was the last of a batch of urls in the data session's download queue, and there are more urls
-        // to be downloaded, get another batch of urls from the database and keep working.
-        //
-        if(_activeDataSessionTasks > 0)
-        {
-            _activeDataSessionTasks -= 1;
-        }
-        if(_activeDataSessionTasks == 0 && _totalFilesWritten < _totalFilesExpectedToWrite)
-        {
-            [self startDownloading];
         }
     }];
 }
 
 
-- (NSArray *)sqliteReadArrayOfOfflineMapURLsToBeDownloadLimit:(NSInteger)limit withError:(NSError **)error
+- (MBXDatabaseURLIterator *)sqliteReadArrayOfOfflineMapURLsToBeDownloadedWithError:(NSError **)error
 {
     assert(![NSThread isMainThread]);
 
+    BOOL opened = [self openDatabaseForDownloadIfNeededWithError:error];
+    if (!opened)
+    {
+        return nil;
+    }
+
     // Read up to limit undownloaded urls from the offline map database
     //
-    NSMutableArray *urlArray = [[NSMutableArray alloc] init];
-    //NSString *query = [NSString stringWithFormat:@"SELECT url FROM resources WHERE status IS NULL;\n"];
-    NSString *query = [NSString stringWithFormat:@"SELECT url FROM resources WHERE status IS NULL LIMIT %ld;\n",(long)limit];
+    NSString *query = [NSString stringWithFormat:@"SELECT url FROM resources WHERE status IS NULL;\n"];
 
     // Success! First prepare the query...
     //
@@ -589,40 +605,12 @@
         {
             *error = [NSError mbx_errorQueryFailedForOfflineMapDatabase:_partialDatabasePath sqliteError:sqlite3_errmsg(_db)];
         }
+        return nil;
     }
     else
     {
-        // Evaluate the query
-        //
-        BOOL keepGoing = YES;
-        while(keepGoing)
-        {
-            rc = sqlite3_step(ppStmt);
-            if(rc == SQLITE_ROW && sqlite3_column_count(ppStmt)==1)
-            {
-                // Success! We got a URL row, so add it to the array
-                //
-                [urlArray addObject:[NSURL URLWithString:[NSString stringWithUTF8String:(const char *)sqlite3_column_text(ppStmt, 0)]]];
-            }
-            else if(rc == SQLITE_DONE)
-            {
-                keepGoing = NO;
-            }
-            else
-            {
-                // Something unexpected happened.
-                //
-                keepGoing = NO;
-                if(error)
-                {
-                    *error = [NSError mbx_errorQueryFailedForOfflineMapDatabase:_partialDatabasePath sqliteError:sqlite3_errmsg(_db)];
-                }
-            }
-        }
+        return [[MBXDatabaseURLIterator alloc] initWithSQLiteStatement:ppStmt];
     }
-    sqlite3_finalize(ppStmt);
-
-    return [NSArray arrayWithArray:urlArray];
 }
 
 
@@ -635,45 +623,72 @@
     //
     NSString *query = @"SELECT COUNT(url) AS totalFilesExpectedToWrite, (SELECT COUNT(url) FROM resources WHERE status IS NOT NULL) AS totalFilesWritten FROM resources;\n";
 
+    int rc;
     BOOL success = NO;
-    const char *zSql = [query cStringUsingEncoding:NSUTF8StringEncoding];
-    int nByte = (int)[query lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
-    sqlite3_stmt *ppStmt;
-    const char *pzTail;
-    int rc = sqlite3_prepare_v2(_db, zSql, nByte, &ppStmt, &pzTail);
-    if (rc)
+    BOOL alreadyOpen = (_db != NULL);
+    BOOL runQuery = YES;
+    if (!alreadyOpen)
     {
-        // Preparing the query didn't work.
-        //
-        if(error)
+        const char *filename = [_partialDatabasePath cStringUsingEncoding:NSUTF8StringEncoding];
+        rc = sqlite3_open_v2(filename, &_db, SQLITE_OPEN_READONLY, NULL);
+        if (rc)
         {
-            *error = [NSError mbx_errorQueryFailedForOfflineMapDatabase:_partialDatabasePath sqliteError:sqlite3_errmsg(_db)];
+            // Opening the database failed... something is very wrong.
+            //
+            if (error)
+            {
+                *error = [NSError mbx_errorCannotOpenOfflineMapDatabase:_partialDatabasePath sqliteError:sqlite3_errmsg(_db)];
+            }
+            runQuery = NO;
         }
     }
-    else
+    
+    if (runQuery)
     {
-        // Evaluate the query
-        //
-        rc = sqlite3_step(ppStmt);
-        if (rc == SQLITE_ROW && sqlite3_column_count(ppStmt)==2)
+        const char *zSql = [query cStringUsingEncoding:NSUTF8StringEncoding];
+        int nByte = (int)[query lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
+        sqlite3_stmt *ppStmt;
+        const char *pzTail;
+        rc = sqlite3_prepare_v2(_db, zSql, nByte, &ppStmt, &pzTail);
+        if (rc)
         {
-            // Success! We got a row with the counts for resource files
-            //
-            _totalFilesExpectedToWrite = [[NSString stringWithUTF8String:(const char *)sqlite3_column_text(ppStmt, 0)] integerValue];
-            _totalFilesWritten = [[NSString stringWithUTF8String:(const char *)sqlite3_column_text(ppStmt, 1)] integerValue];
-            success = YES;
-        }
-        else
-        {
-            // Something unexpected happened.
+            // Preparing the query didn't work.
             //
             if(error)
             {
                 *error = [NSError mbx_errorQueryFailedForOfflineMapDatabase:_partialDatabasePath sqliteError:sqlite3_errmsg(_db)];
             }
         }
+        else
+        {
+            // Evaluate the query
+            //
+            rc = sqlite3_step(ppStmt);
+            if (rc == SQLITE_ROW && sqlite3_column_count(ppStmt)==2)
+            {
+                // Success! We got a row with the counts for resource files
+                //
+                _totalFilesExpectedToWrite = [[NSString stringWithUTF8String:(const char *)sqlite3_column_text(ppStmt, 0)] integerValue];
+                _totalFilesWritten = [[NSString stringWithUTF8String:(const char *)sqlite3_column_text(ppStmt, 1)] integerValue];
+                success = YES;
+            }
+            else
+            {
+                // Something unexpected happened.
+                //
+                if(error)
+                {
+                    *error = [NSError mbx_errorQueryFailedForOfflineMapDatabase:_partialDatabasePath sqliteError:sqlite3_errmsg(_db)];
+                }
+            }
+        }
+        sqlite3_finalize(ppStmt);
     }
-    sqlite3_finalize(ppStmt);
+
+    if (!alreadyOpen)
+    {
+        [self closeDatabaseIfNeeded];
+    }
 
     return success;
 }
@@ -701,17 +716,9 @@
 
     // Open the database read-write and multi-threaded. The slightly obscure c-style variable names here and below are
     // used to stay consistent with the sqlite documentaion.
-    int rc;
-    const char *filename = [_partialDatabasePath cStringUsingEncoding:NSUTF8StringEncoding];
-    rc = sqlite3_open_v2(filename, &_db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, NULL);
-    if (rc)
+    BOOL opened = [self openDatabaseForDownloadIfNeededWithError:error];
+    if (!opened)
     {
-        // Opening the database failed... something is very wrong.
-        //
-        if(error != NULL)
-        {
-            *error = [NSError mbx_errorCannotOpenOfflineMapDatabase:_partialDatabasePath sqliteError:sqlite3_errmsg(_db)];
-        }
         return NO;
     }
     else
@@ -781,6 +788,38 @@
         return NO;
     }
     return YES;
+}
+
+- (BOOL) openDatabaseForDownloadIfNeededWithError:(NSError **)error
+{
+    if (_db != NULL)
+    {
+        return YES;
+    }
+
+    int rc;
+    const char *filename = [_partialDatabasePath cStringUsingEncoding:NSUTF8StringEncoding];
+    rc = sqlite3_open_v2(filename, &_db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, NULL);
+    if (rc)
+    {
+        // Opening the database failed... something is very wrong.
+        //
+        if(error != NULL)
+        {
+            *error = [NSError mbx_errorCannotOpenOfflineMapDatabase:_partialDatabasePath sqliteError:sqlite3_errmsg(_db)];
+        }
+        return NO;
+    }
+    return YES;
+}
+
+- (void) closeDatabaseIfNeeded
+{
+    if (_db != NULL)
+    {
+        sqlite3_close(_db);
+        _db = NULL;
+    }
 }
 
 #pragma mark - API: Begin an offline map download
@@ -1015,8 +1054,7 @@
     [_sqliteQueue cancelAllOperations];
 
     [_sqliteQueue addOperationWithBlock:^{
-        sqlite3_close(_db);
-        _db = NULL;
+        [self closeDatabaseIfNeeded];
         [self setUpNewDataSession];
         _totalFilesWritten = 0;
         _totalFilesExpectedToWrite = 0;
@@ -1043,11 +1081,11 @@
 
             [_dataSession invalidateAndCancel];
             [_sqliteQueue cancelAllOperations];
-
             [_sqliteQueue addOperationWithBlock:^{
                 [self setUpNewDataSession];
                 _totalFilesWritten = 0;
                 _totalFilesExpectedToWrite = 0;
+                [self closeDatabaseIfNeeded];
                 [[NSFileManager defaultManager] removeItemAtPath:_partialDatabasePath error:nil];
 
                 if([_delegate respondsToSelector:@selector(offlineMapDownloader:didCompleteOfflineMapDatabase:withError:)])
@@ -1088,9 +1126,7 @@
         // Stop a download job, preserving the necessary state to resume later
         //
         [_backgroundWorkQueue addOperationWithBlock:^{
-            [_sqliteQueue cancelAllOperations];
             _state = MBXOfflineMapDownloaderStateSuspended;
-            _activeDataSessionTasks = 0;
             [self notifyDelegateOfStateChange];
         }];
     }

@@ -11,9 +11,11 @@
 
 @interface MBXDatabaseURLIterator : NSObject
 
-- (instancetype) initWithSQLite3Statement:(sqlite3_stmt *)stmt;
+- (instancetype) initWithSQLiteStatement:(sqlite3_stmt *)stmt;
 
 - (BOOL) hasNext;
-- (NSString *) next;
+- (NSURL *) next;
+
+- (void) releaseResources;
 
 @end

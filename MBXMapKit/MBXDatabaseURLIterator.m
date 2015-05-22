@@ -9,44 +9,73 @@
 
 @implementation MBXDatabaseURLIterator
 {
+    NSRecursiveLock *_lock;
     sqlite3_stmt *_stmt;
     NSString *_thisString;
 }
 
-- (instancetype) initWithSQLite3Statement:(sqlite3_stmt *)stmt
+- (instancetype) initWithSQLiteStatement:(sqlite3_stmt *)stmt
 {
     self = [super init];
     if (self) {
         _stmt = stmt;
     }
+    _lock = [[NSRecursiveLock alloc] init];
     [self moveToNext];
     return self;
 }
 
 - (BOOL) hasNext
 {
-    return !!_thisString;
+    [_lock lock];
+    BOOL toReturn = !!_thisString;
+    [_lock unlock];
+    return toReturn;
 }
 
-- (NSString *) next
+- (NSURL *) next
 {
+    [_lock lock];
     NSString *returnString = _thisString;
-    [self moveToNext];
-    return returnString;
+    if (returnString != nil)
+    {
+        [self moveToNext];
+    }
+    [_lock unlock];
+
+    if (returnString != nil)
+    {
+        return [NSURL URLWithString:returnString];
+    }
+    else
+    {
+        return nil;
+    }
 }
 
 - (void) moveToNext
 {
+    [_lock lock];
     if (_stmt) {
         int ret = sqlite3_step(_stmt);
         if (ret == SQLITE_ROW && sqlite3_column_count(_stmt) == 1) {
             _thisString = [NSString stringWithUTF8String:(const char *)sqlite3_column_text(_stmt, 0)];
         } else {
-            _thisString = NULL;
-            sqlite3_finalize(_stmt);
-            _stmt = NULL;
+            [self releaseResources];
         }
     }
+    [_lock unlock];
+}
+
+- (void) releaseResources
+{
+    [_lock lock];
+    _thisString = nil;
+    if (_stmt) {
+        sqlite3_finalize(_stmt);
+        _stmt = NULL;
+    }
+    [_lock unlock];
 }
 
 @end
