@@ -512,8 +512,7 @@
 
         // Creating the database file worked, so now start an atomic commit
         //
-        NSMutableString *query = [[NSMutableString alloc] init];
-        [query appendString:@"PRAGMA foreign_keys=ON;\n"];
+        /*NSMutableString *query = [[NSMutableString alloc] init];
         [query appendString:@"BEGIN TRANSACTION;\n"];
         const char *zSql = [query cStringUsingEncoding:NSUTF8StringEncoding];
         char *errmsg;
@@ -524,10 +523,11 @@
             sqlite3_free(errmsg);
         }
         else
-        {
+        {*/
             // Continue by inserting an image blob into the data table
             //
-            NSString *query2 = @"INSERT INTO data(value) VALUES(?);";
+            NSString *query2 = [NSString stringWithFormat:@"UPDATE resources SET status=200,data=? WHERE url='%@';", [url absoluteString]];
+//            NSString *query2 = @"INSERT INTO data(value) VALUES(?);";
             const char *zSql2 = [query2 cStringUsingEncoding:NSUTF8StringEncoding];
             int nByte2 = (int)[query2 lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
             sqlite3_stmt *ppStmt2;
@@ -549,6 +549,7 @@
             }
             sqlite3_finalize(ppStmt2);
 
+            /*
             // Finish up by updating the url in the resources table with status and the blob id, then close out the commit
             //
             if(!error)
@@ -564,6 +565,7 @@
                     sqlite3_free(errmsg);
                 }
             }
+            */
             
             if(error)
             {
@@ -571,7 +573,7 @@
                 //
                 [self notifyDelegateOfSqliteError:error];
             }
-        }
+        //}
     }];
 }
 
@@ -701,11 +703,9 @@
     // Build a query to populate the database (map metadata and list of map resource urls)
     //
     NSMutableString *createQuery = [[NSMutableString alloc] init];
-    [createQuery appendString:@"PRAGMA foreign_keys=ON;\n"];
     [createQuery appendString:@"BEGIN TRANSACTION;\n"];
     [createQuery appendString:@"CREATE TABLE metadata (name TEXT UNIQUE, value TEXT);\n"];
-    [createQuery appendString:@"CREATE TABLE data (id INTEGER PRIMARY KEY, value BLOB);\n"];
-    [createQuery appendString:@"CREATE TABLE resources (url TEXT UNIQUE, status TEXT, id INTEGER REFERENCES data);\n"];
+    [createQuery appendString:@"CREATE TABLE resources (url TEXT UNIQUE, status TEXT, data BLOB);\n"];
     for(NSString *key in metadata) {
         [createQuery appendFormat:@"INSERT INTO \"metadata\" VALUES('%@','%@');\n", key, [metadata valueForKey:key]];
     }

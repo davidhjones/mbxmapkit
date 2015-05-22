@@ -170,7 +170,7 @@
 
 - (NSData *)sqliteDataForURL:(NSURL *)url
 {
-    NSString *query = [NSString stringWithFormat:@"SELECT value FROM data WHERE id = (SELECT id from resources WHERE url='%@');", [url absoluteString]];
+    NSString *query = [NSString stringWithFormat:@"SELECT data FROM resources WHERE url='%@';", [url absoluteString]];
     NSData *data = [self sqliteDataForSingleColumnQuery:query];
     return data;
 }
