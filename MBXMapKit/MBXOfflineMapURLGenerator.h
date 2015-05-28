@@ -2,7 +2,7 @@
 //  MBXOfflineMapURLGenerator.h
 //  MBXMapKit
 //
-//  Copyright (c) 2014 Mapbox. All rights reserved.
+//  Copyright (c) 2015 Mapbox. All rights reserved.
 //
 
 @import Foundation;
@@ -14,5 +14,7 @@
 @property (readonly) NSInteger urlCount;
 
 - (NSString *) urlForIndex:(NSInteger)index mapID:(NSString*)mapID imageQualityExtension:(NSString*)imageQualityExtension;
+
+- (instancetype)init UNAVAILABLE_ATTRIBUTE;
 
 @end

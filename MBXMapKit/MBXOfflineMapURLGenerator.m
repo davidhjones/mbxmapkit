@@ -2,7 +2,7 @@
 //  MBXOfflineMapURLGenerator.h
 //  MBXMapKit
 //
-//  Copyright (c) 2014 Mapbox. All rights reserved.
+//  Copyright (c) 2015 Mapbox. All rights reserved.
 //
 
 #import "MBXMapKit.h"

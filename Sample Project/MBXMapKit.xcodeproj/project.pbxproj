@@ -18,7 +18,7 @@
 		012A0DBA1909D5FC005B69D7 /* MBXOfflineMapDownloader.m in Sources */ = {isa = PBXBuildFile; fileRef = 017F79411909D1D200EF8AD1 /* MBXOfflineMapDownloader.m */; };
 		012A0DBB1909D5FC005B69D7 /* MBXPointAnnotation.m in Sources */ = {isa = PBXBuildFile; fileRef = 017F79431909D1D200EF8AD1 /* MBXPointAnnotation.m */; };
 		012A0DBC1909D5FC005B69D7 /* MBXRasterTileOverlay.m in Sources */ = {isa = PBXBuildFile; fileRef = 017F79451909D1D200EF8AD1 /* MBXRasterTileOverlay.m */; };
-		28235D351B0D32060082E1DB /* MBXDatabaseURLIterator.m in Sources */ = {isa = PBXBuildFile; fileRef = 28235D341B0D32060082E1DB /* MBXDatabaseURLIterator.m */; };
+		2828379C1B17955100EB677D /* MBXOfflineMapDownloadIterator.m in Sources */ = {isa = PBXBuildFile; fileRef = 2828379B1B17955100EB677D /* MBXOfflineMapDownloadIterator.m */; };
 		286B6CC81B069EA400C61902 /* MBXOfflineMapURLGenerator.m in Sources */ = {isa = PBXBuildFile; fileRef = 286B6CC71B069EA400C61902 /* MBXOfflineMapURLGenerator.m */; };
 		DDA62C701A38BD2900B01B80 /* MBXRasterTileRenderer.m in Sources */ = {isa = PBXBuildFile; fileRef = DDA62C6F1A38BD2900B01B80 /* MBXRasterTileRenderer.m */; };
 		DDB97D07199D72A5006EC3A6 /* libsqlite3.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = DDB97D06199D72A5006EC3A6 /* libsqlite3.dylib */; };
@@ -49,8 +49,8 @@
 		017F79431909D1D200EF8AD1 /* MBXPointAnnotation.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = MBXPointAnnotation.m; sourceTree = "<group>"; };
 		017F79441909D1D200EF8AD1 /* MBXRasterTileOverlay.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = MBXRasterTileOverlay.h; sourceTree = "<group>"; };
 		017F79451909D1D200EF8AD1 /* MBXRasterTileOverlay.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = MBXRasterTileOverlay.m; sourceTree = "<group>"; };
-		28235D331B0D32060082E1DB /* MBXDatabaseURLIterator.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = MBXDatabaseURLIterator.h; path = ../MBXMapKit/MBXDatabaseURLIterator.h; sourceTree = "<group>"; };
-		28235D341B0D32060082E1DB /* MBXDatabaseURLIterator.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = MBXDatabaseURLIterator.m; path = ../MBXMapKit/MBXDatabaseURLIterator.m; sourceTree = "<group>"; };
+		2828379A1B17955100EB677D /* MBXOfflineMapDownloadIterator.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = MBXOfflineMapDownloadIterator.h; path = ../MBXMapKit/MBXOfflineMapDownloadIterator.h; sourceTree = "<group>"; };
+		2828379B1B17955100EB677D /* MBXOfflineMapDownloadIterator.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = MBXOfflineMapDownloadIterator.m; path = ../MBXMapKit/MBXOfflineMapDownloadIterator.m; sourceTree = "<group>"; };
 		286B6CC61B069EA400C61902 /* MBXOfflineMapURLGenerator.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = MBXOfflineMapURLGenerator.h; path = ../MBXMapKit/MBXOfflineMapURLGenerator.h; sourceTree = "<group>"; };
 		286B6CC71B069EA400C61902 /* MBXOfflineMapURLGenerator.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = MBXOfflineMapURLGenerator.m; path = ../MBXMapKit/MBXOfflineMapURLGenerator.m; sourceTree = "<group>"; };
 		DDA62C6E1A38BD2900B01B80 /* MBXRasterTileRenderer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = MBXRasterTileRenderer.h; path = ../MBXMapKit/MBXRasterTileRenderer.h; sourceTree = "<group>"; };
@@ -118,8 +118,8 @@
 				017F79451909D1D200EF8AD1 /* MBXRasterTileOverlay.m */,
 				DDA62C6E1A38BD2900B01B80 /* MBXRasterTileRenderer.h */,
 				DDA62C6F1A38BD2900B01B80 /* MBXRasterTileRenderer.m */,
-				28235D331B0D32060082E1DB /* MBXDatabaseURLIterator.h */,
-				28235D341B0D32060082E1DB /* MBXDatabaseURLIterator.m */,
+				2828379A1B17955100EB677D /* MBXOfflineMapDownloadIterator.h */,
+				2828379B1B17955100EB677D /* MBXOfflineMapDownloadIterator.m */,
 			);
 			name = MBXMapKit;
 			path = ../mbxmapkit;
@@ -251,9 +251,9 @@
 				012A0DB91909D5FC005B69D7 /* MBXOfflineMapDatabase.m in Sources */,
 				DDA62C701A38BD2900B01B80 /* MBXRasterTileRenderer.m in Sources */,
 				012A0DBA1909D5FC005B69D7 /* MBXOfflineMapDownloader.m in Sources */,
+				2828379C1B17955100EB677D /* MBXOfflineMapDownloadIterator.m in Sources */,
 				012A0DBB1909D5FC005B69D7 /* MBXPointAnnotation.m in Sources */,
 				012A0DBC1909D5FC005B69D7 /* MBXRasterTileOverlay.m in Sources */,
-				28235D351B0D32060082E1DB /* MBXDatabaseURLIterator.m in Sources */,
 				012A0D881909D3F6005B69D7 /* main.m in Sources */,
 				012A0DB21909D52E005B69D7 /* MBXViewController.m in Sources */,
 				286B6CC81B069EA400C61902 /* MBXOfflineMapURLGenerator.m in Sources */,

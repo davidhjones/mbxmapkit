@@ -52,6 +52,9 @@
 /** Initial creation date of the offline map database. */
 @property (readonly, nonatomic) NSDate *creationDate;
 
+/** The filesystem path of the database. */
+@property (readonly, nonatomic) NSString *path;
+
 - (instancetype)init UNAVAILABLE_ATTRIBUTE;
 
 @end
