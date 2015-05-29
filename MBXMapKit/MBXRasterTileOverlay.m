@@ -34,7 +34,7 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, NSError *error
 @interface MBXOfflineMapDatabase ()
 
 - (NSData *)dataForURL:(NSURL *)url withError:(NSError **)error;
-
+- (BOOL)setData:(NSData *)data forURL:(NSURL *)url;
 - (void) closeDatabaseIfNeeded;
 
 @end
@@ -72,7 +72,8 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, NSError *error
 @property (nonatomic) BOOL didFinishLoadingMetadata;
 @property (nonatomic) BOOL didFinishLoadingMarkers;
 
-@property (strong, nonatomic) MBXOfflineMapDatabase *offlineMapDatabase;
+@property (nonatomic) BOOL inOfflineMode;
+@property (strong, nonatomic) NSArray *offlineMapDatabases;
 
 @property (nonatomic) NSDictionary *metadataForPendingNotification;
 @property (nonatomic) NSError *metadataErrorForPendingNotification;
@@ -225,8 +226,24 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, NSError *error
     self = [super init];
     if (self)
     {
-        _offlineMapDatabase = offlineMapDatabase;
+        _inOfflineMode = YES;
+        _offlineMapDatabases = @[ offlineMapDatabase ];
         [self setupMapID:offlineMapDatabase.mapID includeMetadata:offlineMapDatabase.includesMetadata includeMarkers:offlineMapDatabase.includesMarkers imageQuality:offlineMapDatabase.imageQuality];
+    }
+    return self;
+}
+
+- (instancetype)initWithOfflineMapDatabases:(NSArray *)offlineMapDatabases
+{
+    assert(offlineMapDatabases);
+    assert([offlineMapDatabases count] > 0);
+    self = [super init];
+    if (self)
+    {
+        _inOfflineMode = YES;
+        _offlineMapDatabases = offlineMapDatabases;
+        MBXOfflineMapDatabase *firstOfflineMapDatabase = [_offlineMapDatabases objectAtIndex:0];
+        [self setupMapID:firstOfflineMapDatabase.mapID includeMetadata:firstOfflineMapDatabase.includesMetadata includeMarkers:firstOfflineMapDatabase.includesMarkers imageQuality:firstOfflineMapDatabase.imageQuality];
     }
     return self;
 }
@@ -277,6 +294,21 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, NSError *error
     {
         _didFinishLoadingMarkers = YES;
     }
+    
+    if (!_offlineMapDatabases)
+    {
+        _offlineMapDatabases = @[];
+
+        NSArray *dbs = [[MBXOfflineMapDownloader sharedOfflineMapDownloader] offlineMapDatabases];
+        for (MBXOfflineMapDatabase *db in dbs)
+        {
+            if ([[db mapID] isEqualToString:_mapID])
+            {
+                _offlineMapDatabases = @[ db ];
+                break;
+            }
+        }
+    }
 }
 
 
@@ -284,9 +316,9 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, NSError *error
 {
     _delegate = nil;
     _sessionHasBeenInvalidated = YES;
-    if (_offlineMapDatabase)
+    for (MBXOfflineMapDatabase *db in _offlineMapDatabases)
     {
-        [_offlineMapDatabase closeDatabaseIfNeeded];
+        [db closeDatabaseIfNeeded];
     }
 }
 
@@ -341,7 +373,20 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, NSError *error
 
     [self addPendingRender:url removePendingRender:nil];
 
-    [self asyncLoadURL:url workerBlock:nil completionHandler:completionHandler];
+    [self asyncLoadURL:url path:&path workerBlock:nil completionHandler:completionHandler];
+}
+
+- (NSURL *)URLForTilePath:(MKTileOverlayPath)path mapID:(NSString *)mapID imageQuality:(MBXRasterImageQuality)imageQuality
+{
+    return [NSURL URLWithString:[NSString stringWithFormat:@"https://a.tiles.mapbox.com/v4/%@/%ld/%ld/%ld%@.%@%@",
+                                 _mapID,
+                                 (long)path.z,
+                                 (long)path.x,
+                                 (long)path.y,
+                                 (path.contentScaleFactor > 1.0 ? @"@2x" : @""),
+                                 [MBXRasterTileOverlay qualityExtensionForImageQuality:_imageQuality],
+                                 [@"?access_token=" stringByAppendingString:[MBXMapKit accessToken]]
+                                 ]];
 }
 
 #pragma mark - Delegate Notifications
@@ -527,7 +572,7 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, NSError *error
         }
     };
 
-    [self asyncLoadURL:_markersURL workerBlock:workerBlock completionHandler:completionHandler];
+    [self asyncLoadURL:_markersURL path:NULL workerBlock:workerBlock completionHandler:completionHandler];
 }
 
 
@@ -564,7 +609,7 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, NSError *error
         }
     };
 
-    [self asyncLoadURL:url workerBlock:workerBlock completionHandler:completionHandler];
+    [self asyncLoadURL:url path:NULL workerBlock:workerBlock completionHandler:completionHandler];
 }
 
 
@@ -608,11 +653,11 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, NSError *error
         }
     };
 
-    [self asyncLoadURL:_metadataURL workerBlock:workerBlock completionHandler:completionHandler];
+    [self asyncLoadURL:_metadataURL path:NULL workerBlock:workerBlock completionHandler:completionHandler];
 }
 
 
-- (void)asyncLoadURL:(NSURL *)url workerBlock:(MBXRasterTileOverlayWorkerBlock)workerBlock completionHandler:(MBXRasterTileOverlayCompletionBlock)completionHandler
+- (void)asyncLoadURL:(NSURL *)url path:(MKTileOverlayPath*)path workerBlock:(MBXRasterTileOverlayWorkerBlock)workerBlock completionHandler:(MBXRasterTileOverlayCompletionBlock)completionHandler
 {
     // This method exists to:
     // 1. Encapsulte the boilderplate network code for checking HTTP status which is needed for every data session task
@@ -620,18 +665,46 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, NSError *error
     // 3. Provide a hook point for implementing alternate methods (i.e. offline map database) of fetching data for a URL
     //
 
-    if (_offlineMapDatabase)
+    BOOL foundDataOffline = FALSE;
+    for (NSInteger dbIdx = 0; dbIdx < [_offlineMapDatabases count]; dbIdx++)
     {
+        MBXOfflineMapDatabase *database = [_offlineMapDatabases objectAtIndex:dbIdx];
+
         // If this assert fails, it's probably because MBXOfflineMapDownloader's removeOfflineMapDatabase: method has been invoked
         // for this offline map database object while the database is still associated with a map overlay. That's a serious logic
         // error which should be checked for and avoided.
         //
-        assert(_offlineMapDatabase.isInvalid == NO);
+        assert(database.isInvalid == NO);
 
         // If an offline map database is configured for this overlay, use the database to fetch data for URLs
         //
         NSError *error;
-        NSData *data = [_offlineMapDatabase dataForURL:url withError:&error];
+        
+        BOOL mustUseThisDatabase = _inOfflineMode && (dbIdx == ([_offlineMapDatabases count] - 1));
+        BOOL canSkipThisDatabase = !mustUseThisDatabase;
+        
+        NSString *databaseMapID = [database mapID];
+        NSURL *urlForThisDatabase;
+        if (path != NULL)
+        {
+            MBXRasterImageQuality databaseImageQuality = [database imageQuality];
+            urlForThisDatabase = [self URLForTilePath:*path mapID:databaseMapID imageQuality:databaseImageQuality];
+        }
+        else if (canSkipThisDatabase && ![databaseMapID isEqualToString:_mapID])
+        {
+            continue;
+        }
+        else
+        {
+            urlForThisDatabase = url;
+        }
+
+        NSData *data = [database dataForURL:url withError:&error];
+        if (canSkipThisDatabase && !data)
+        {
+            continue;
+        }
+
         if(!error)
         {
             // Since the URL was successfully retrieved, invoke the block to process its data
@@ -640,6 +713,8 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, NSError *error
         }
         completionHandler(data,error);
 
+        foundDataOffline = TRUE;
+
         if (error)
         {
             [self setRenderCompletionState:MBXRenderCompletionStatePartial
@@ -647,8 +722,12 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, NSError *error
         }
 
         [self addPendingRender:nil removePendingRender:url];
+        
+        // At this point in the loop, we've found the data, so we can leave the loop.
+        break;
     }
-    else
+
+    if (!foundDataOffline)
     {
         // In the normal case, use HTTP network requests to fetch data for URLs
         //
@@ -669,6 +748,10 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, NSError *error
                                            // Since the URL was successfully retrieved, invoke the block to process its data
                                            //
                                            if (workerBlock) workerBlock(data, &outError);
+                                           
+                                           // Put the data into the appropriate database
+                                            MBXOfflineMapDatabase *database = [self databaseForMapID:_mapID];
+                                            [database setData:data forURL:url];
                                        }
                                    }
                                    else
@@ -687,6 +770,18 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, NSError *error
                                    [self addPendingRender:nil removePendingRender:url];
                                }];
     }
+}
+
+- (MBXOfflineMapDatabase *)databaseForMapID:(NSString *)mapID
+{
+    for (MBXOfflineMapDatabase *database in _offlineMapDatabases)
+    {
+        if ([[database mapID] isEqualToString:mapID])
+        {
+            return database;
+        }
+    }
+    return nil;
 }
 
 - (void)addPendingRender:(NSURL *)addURL removePendingRender:(NSURL *)removeURL
