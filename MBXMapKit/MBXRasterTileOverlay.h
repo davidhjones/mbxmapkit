@@ -13,6 +13,9 @@
 @class MBXRasterTileOverlay;
 @class MBXOfflineMapDatabase;
 
+#pragma mark - Constants for MBXMapKit tile streaming notifications
+extern NSString* const MBXMapKitStreamingTilesDownloadedNotification;
+
 #pragma mark - Constants for the MBXMapKit error domain
 
 extern NSString *const MBXMapKitErrorDomain;

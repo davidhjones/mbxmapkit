@@ -7,6 +7,8 @@
 
 #import "MBXMapKit.h"
 
+NSString* const MBXMapKitStreamingTilesDownloadedNotification = @"MBXMapKitStreamingTilesDownloadedNotification";
+
 typedef NS_ENUM(NSUInteger, MBXRenderCompletionState) {
     MBXRenderCompletionStateUnknown = 0,
     MBXRenderCompletionStatePartial = 1,
@@ -14,7 +16,7 @@ typedef NS_ENUM(NSUInteger, MBXRenderCompletionState) {
 };
 
 typedef void (^MBXRasterTileOverlayWorkerBlock)(NSData *data, NSError **error);
-typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, NSError *error);
+typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, BOOL cached, NSError *error);
 
 #pragma mark - Private API for creating verbose errors
 
@@ -353,7 +355,12 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, NSError *error
                                        [@"?access_token=" stringByAppendingString:[MBXMapKit accessToken]]
                                        ]];
 
-    MBXRasterTileOverlayCompletionBlock completionHandler = ^(NSData *data, NSError *error) {
+    MBXRasterTileOverlayCompletionBlock completionHandler = ^(NSData *data, BOOL cached, NSError *error) {
+        if (data != nil && cached == FALSE)
+        {
+            [[NSNotificationCenter defaultCenter] postNotificationName:MBXMapKitStreamingTilesDownloadedNotification object:nil];
+        }
+        
         // Invoke the loadTileAtPath's completion handler
         //
         if ([NSThread isMainThread])
@@ -531,7 +538,7 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, NSError *error
 
     // This block runs at the end of all error handling and data processing associated with the URL
     //
-    MBXRasterTileOverlayCompletionBlock completionHandler = ^(NSData *data, NSError *error) {
+    MBXRasterTileOverlayCompletionBlock completionHandler = ^(NSData *data, BOOL cached, NSError *error) {
         if(error) {
             // At this point, it's possible there was an HTTP or network error. It could also be the
             // case that some of the the markers are in the process of successfully loading their icons,
@@ -596,7 +603,7 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, NSError *error
 
     // This block runs at the end of all error handling and data processing associated with the URL
     //
-    MBXRasterTileOverlayCompletionBlock completionHandler = ^(NSData *data, NSError *error) {
+    MBXRasterTileOverlayCompletionBlock completionHandler = ^(NSData *data, BOOL cached, NSError *error) {
         if(_markerIconLoaderMayInitiateDelegateCallback && _activeMarkerIconRequests <= 0)
         {
             _markers = [NSArray arrayWithArray:_mutableMarkers];
@@ -644,7 +651,7 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, NSError *error
 
     // This block runs at the end of all error handling and data processing associated with the URL
     //
-    MBXRasterTileOverlayCompletionBlock completionHandler = ^(NSData *data, NSError *error) {
+    MBXRasterTileOverlayCompletionBlock completionHandler = ^(NSData *data, BOOL cached, NSError *error) {
         [self notifyDelegateDidLoadMetadata:_tileJSONDictionary withError:error];
 
         _didFinishLoadingMetadata = YES;
@@ -711,7 +718,7 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, NSError *error
             //
             if (workerBlock) workerBlock(data, &error);
         }
-        completionHandler(data,error);
+        completionHandler(data, TRUE, error);
 
         foundDataOffline = TRUE;
 
@@ -759,7 +766,7 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, NSError *error
                                        outError = [error copy];
                                    }
 
-                                   completionHandler(data, outError);
+                                   completionHandler(data, FALSE, outError);
 
                                    if (outError)
                                    {
