@@ -319,7 +319,7 @@ cleanup:
     sqlite3 *db = [self databaseWithError:nil];
     if (db == NULL)
     {
-        return NO;
+        return nil;
     }
 
     id object = nil;
