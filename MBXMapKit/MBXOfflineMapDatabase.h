@@ -37,15 +37,6 @@
 /** The image quality used to download the raster tile images stored in this offline map database. */
 @property (readonly, nonatomic) MBXRasterImageQuality imageQuality;
 
-/** The map region which was used to initiate the downloading of the tiles in this offline map database. */
-@property (readonly, nonatomic) MKCoordinateRegion mapRegion;
-
-/** The minimum zoom limit which was used to initiate the downloading of the tiles in this offline map database. */
-@property (readonly, nonatomic) NSInteger minimumZ;
-
-/** The maximum zoom limit which was used to initiate the downloading of the tiles in this offline map database. */
-@property (readonly, nonatomic) NSInteger maximumZ;
-
 /** Whether this offline map database has been invalidated. This is to help prevent the completion handlers in `MBXRasterTileOverlay` from causing problems after overlay layers are removed from an `MKMapView`. */
 @property (readonly, nonatomic, getter=isInvalid) BOOL invalid;
 
