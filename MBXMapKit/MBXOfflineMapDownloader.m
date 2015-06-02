@@ -11,6 +11,8 @@
 
 #import <sqlite3.h>
 
+NSString* const MBXMapKitOfflineTileDownloadedNotification = @"MBXMapKitOfflineTileDownloadedNotification";
+
 #pragma mark - Private API for creating verbose errors
 
 @interface NSError (MBXError)
@@ -357,10 +359,11 @@
     }
 
     if ([_downloadIterator hasNext]) {
-        NSURL *nextUrl = [NSURL URLWithString:[_downloadIterator next]];
+        BOOL isTile;
+        NSURL *nextUrl = [NSURL URLWithString:[_downloadIterator nextIsTile:&isTile]];
         BOOL alreadyHasData = [_downloadingDatabase isAlreadyDataForURL:nextUrl];
         
-        void (^finish)() = ^{
+        void (^finish)() = ^ {
             if (_state != MBXOfflineMapDownloaderStateCanceling && _state != MBXOfflineMapDownloaderStateAvailable)
             {
                 [self markOneFileDownloaded];
@@ -412,6 +415,11 @@
                         if (!set)
                         {
                             NSLog(@"problem setting");
+                        }
+
+                        if (isTile)
+                        {
+                            [[NSNotificationCenter defaultCenter] postNotificationName:MBXMapKitOfflineTileDownloadedNotification object:nil];
                         }
                     }
                 }

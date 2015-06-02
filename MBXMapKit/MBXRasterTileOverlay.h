@@ -14,7 +14,8 @@
 @class MBXOfflineMapDatabase;
 
 #pragma mark - Constants for MBXMapKit tile streaming notifications
-extern NSString* const MBXMapKitStreamingTilesDownloadedNotification;
+/** Posted when a single tile is downloaded. */
+extern NSString* const MBXMapKitStreamingTileDownloadedNotification;
 
 #pragma mark - Constants for the MBXMapKit error domain
 

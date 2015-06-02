@@ -7,7 +7,7 @@
 
 #import "MBXMapKit.h"
 
-NSString* const MBXMapKitStreamingTilesDownloadedNotification = @"MBXMapKitStreamingTilesDownloadedNotification";
+NSString* const MBXMapKitStreamingTileDownloadedNotification = @"MBXMapKitStreamingTileDownloadedNotification";
 
 typedef NS_ENUM(NSUInteger, MBXRenderCompletionState) {
     MBXRenderCompletionStateUnknown = 0,
@@ -358,7 +358,7 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, BOOL cached, N
     MBXRasterTileOverlayCompletionBlock completionHandler = ^(NSData *data, BOOL cached, NSError *error) {
         if (data != nil && cached == FALSE)
         {
-            [[NSNotificationCenter defaultCenter] postNotificationName:MBXMapKitStreamingTilesDownloadedNotification object:nil];
+            [[NSNotificationCenter defaultCenter] postNotificationName:MBXMapKitStreamingTileDownloadedNotification object:nil];
         }
         
         // Invoke the loadTileAtPath's completion handler

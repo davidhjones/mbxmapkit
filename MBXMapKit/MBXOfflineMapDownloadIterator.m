@@ -50,7 +50,7 @@
     }
 }
 
-- (NSString *)next
+- (NSString *)nextIsTile:(BOOL *)isTile
 {
     @synchronized (self)
     {
@@ -58,10 +58,18 @@
         if (_index < _urlCount)
         {
             toReturn = [_urls objectAtIndex:_index];
+            if (isTile)
+            {
+                *isTile = NO;
+            }
         }
         else if (_index < _totalCount)
         {
             toReturn = [_generator urlForIndex:(_index - _urlCount) mapID:_mapID imageQualityExtension:_imageQualityExtension];
+            if (isTile)
+            {
+                *isTile = YES;
+            }
         }
         else
         {

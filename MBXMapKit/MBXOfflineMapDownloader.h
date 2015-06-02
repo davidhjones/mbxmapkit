@@ -22,6 +22,9 @@ typedef NS_ENUM(NSUInteger, MBXOfflineMapDownloaderState) {
     MBXOfflineMapDownloaderStateAvailable
 };
 
+#pragma mark - Constants for MBXMapKit tile download notifications
+/** Posted when a single tile is downloaded for an offline database. */
+extern NSString* const MBXMapKitOfflineTileDownloadedNotification;
 
 #pragma mark - Delegate protocol for progress updates
 
