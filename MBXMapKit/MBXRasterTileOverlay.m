@@ -706,7 +706,7 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, BOOL cached, N
             urlForThisDatabase = url;
         }
 
-        NSData *data = [database dataForURL:url withError:&error];
+        NSData *data = [database dataForURL:urlForThisDatabase withError:&error];
         if (canSkipThisDatabase && !data)
         {
             continue;
