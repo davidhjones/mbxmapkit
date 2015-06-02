@@ -499,7 +499,10 @@
     {
         if ([db imageQuality] == imageQuality)
         {
-            *error = [NSError mbx_errorCannotCreateOfflineMapDatabaseWithID:mapID becauseOfIncompatibleMetadata:@"imageQuality"];
+            if (error != nil)
+            {
+                *error = [NSError mbx_errorCannotCreateOfflineMapDatabaseWithID:mapID becauseOfIncompatibleMetadata:@"imageQuality"];
+            }
             return nil;
         }
         else
