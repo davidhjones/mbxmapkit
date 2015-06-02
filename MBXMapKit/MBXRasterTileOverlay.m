@@ -386,12 +386,12 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, BOOL cached, N
 - (NSURL *)URLForTilePath:(MKTileOverlayPath)path mapID:(NSString *)mapID imageQuality:(MBXRasterImageQuality)imageQuality
 {
     return [NSURL URLWithString:[NSString stringWithFormat:@"https://a.tiles.mapbox.com/v4/%@/%ld/%ld/%ld%@.%@%@",
-                                 _mapID,
+                                 mapID,
                                  (long)path.z,
                                  (long)path.x,
                                  (long)path.y,
                                  (path.contentScaleFactor > 1.0 ? @"@2x" : @""),
-                                 [MBXRasterTileOverlay qualityExtensionForImageQuality:_imageQuality],
+                                 [MBXRasterTileOverlay qualityExtensionForImageQuality:imageQuality],
                                  [@"?access_token=" stringByAppendingString:[MBXMapKit accessToken]]
                                  ]];
 }
