@@ -407,11 +407,7 @@
                     {
                         // Since the URL was successfully retrieved, save the data
                         //
-                        BOOL set = [_downloadingDatabase setData:data forURL:nextUrl];
-                        if (!set)
-                        {
-                            NSLog(@"problem setting");
-                        }
+                        [_downloadingDatabase setData:data forURL:nextUrl];
                     }
                 }
 
