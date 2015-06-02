@@ -18,6 +18,7 @@
 + (NSError *)mbx_errorWithCode:(NSInteger)code reason:(NSString *)reason description:(NSString *)description;
 + (NSError *)mbx_errorCannotOpenOfflineMapDatabase:(NSString *)path sqliteError:(const char *)sqliteError;
 + (NSError *)mbx_errorQueryFailedForOfflineMapDatabase:(NSString *)path sqliteError:(const char *)sqliteError;
++ (NSError *)mbx_errorCannotCreateOfflineMapDatabaseWithID:(NSString *)mapID becauseOfIncompatibleMetadata:(NSString *)metadataName;
 
 @end
 
@@ -455,6 +456,12 @@
     [self notifyDelegateOfStateChange];
 }
 
+- (MBXOfflineMapDatabase *)createNewDatabaseWithMetadata:(NSDictionary *)metadata error:(NSError **)error
+{
+    NSString *path = [NSString stringWithFormat:@"%@.complete", [metadata objectForKey:@"uniqueID"]];
+    return [[MBXOfflineMapDatabase alloc] initWithPath:[[_offlineMapDirectory URLByAppendingPathComponent:path] path] mapID:[metadata objectForKey:@"mapID"] metadata:metadata withError:error];
+}
+
 - (BOOL)sqliteCreateOrUpdateDatabaseUsingMetadata:(NSDictionary *)metadata urlArray:(NSArray *)urls generator:(MBXOfflineMapURLGenerator *)generator withError:(NSError **)error
 {
     assert(![NSThread isMainThread]);
@@ -465,16 +472,52 @@
     }
     else
     {
-        NSString *path = [NSString stringWithFormat:@"%@.complete", [metadata objectForKey:@"uniqueID"]];
-        _downloadingDatabase = [[MBXOfflineMapDatabase alloc] initWithPath:[[_offlineMapDirectory URLByAppendingPathComponent:path] path] mapID:[metadata objectForKey:@"mapID"] metadata:metadata withError:error];
+        _downloadingDatabase = [self createNewDatabaseWithMetadata:metadata error:error];
     }
     
     _totalFilesExpectedToWrite = [urls count] + [generator urlCount];
     _totalFilesWritten = 0;
-    return YES;
+    return _downloadingDatabase != nil;
+}
+
+- (NSDictionary *)metadataForNewDatabaseWithID:(NSString *)mapID includeMarkers:(BOOL)includeMarkers includeMetadata:(BOOL)includeMetadata imageQuality:(MBXRasterImageQuality)imageQuality
+{
+    NSString *uniqueID = [[NSUUID UUID] UUIDString];
+    return @{ @"uniqueID": uniqueID,
+              @"mapID": mapID,
+              @"includesMetadata": includeMetadata ? @"YES" : @"NO",
+              @"includesMarkers": includeMarkers ? @"YES" : @"NO",
+              @"imageQuality": [NSString stringWithFormat:@"%ld",(long)imageQuality]
+            };
 }
 
 #pragma mark - API: Begin an offline map download
+- (MBXOfflineMapDatabase *)createEmptyMapDatabaseWithMapID:(NSString *)mapID imageQuality:(MBXRasterImageQuality)imageQuality error:(NSError **)error
+{
+    MBXOfflineMapDatabase *db = [self offlineMapDatabaseWithMapID:mapID];
+    if (db)
+    {
+        if ([db imageQuality] == imageQuality)
+        {
+            *error = [NSError mbx_errorCannotCreateOfflineMapDatabaseWithID:mapID becauseOfIncompatibleMetadata:@"imageQuality"];
+            return nil;
+        }
+        else
+        {
+            return db;
+        }
+    }
+    
+    // Actually create the database
+    NSDictionary *metadata = [self metadataForNewDatabaseWithID:mapID includeMarkers:NO includeMetadata:NO imageQuality:imageQuality];
+    MBXOfflineMapDatabase *database = [self createNewDatabaseWithMetadata:metadata error:error];
+    if (database && ![_mutableOfflineMapDatabases containsObject:database])
+    {
+        [_mutableOfflineMapDatabases addObject:database];
+    }
+    
+    return database;
+}
 
 - (void)beginDownloadingMapID:(NSString *)mapID mapRegion:(MKCoordinateRegion)mapRegion minimumZ:(NSInteger)minimumZ maximumZ:(NSInteger)maximumZ
 {
@@ -496,7 +539,6 @@
 
         // Start a download job to retrieve all the resources needed for using the specified map offline
         //
-        NSString *uniqueID = [[NSUUID UUID] UUIDString];
         _state = MBXOfflineMapDownloaderStateRunning;
         [self notifyDelegateOfStateChange];
         
@@ -506,13 +548,7 @@
         NSMutableDictionary *metadataDictionary = [[NSMutableDictionary alloc] init];
         if (!_downloadingDatabase)
         {
-            [metadataDictionary addEntriesFromDictionary:@{
-              @"uniqueID": uniqueID,
-              @"mapID": mapID,
-              @"includesMetadata": includeMetadata ? @"YES" : @"NO",
-              @"includesMarkers": includeMarkers ? @"YES" : @"NO",
-              @"imageQuality": [NSString stringWithFormat:@"%ld",(long)imageQuality]
-            }];
+            [metadataDictionary addEntriesFromDictionary:[self metadataForNewDatabaseWithID:mapID includeMarkers:includeMarkers includeMetadata:includeMetadata imageQuality:imageQuality]];
         }
         else
         {

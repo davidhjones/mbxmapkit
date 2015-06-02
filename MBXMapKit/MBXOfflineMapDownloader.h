@@ -168,6 +168,13 @@ typedef NS_ENUM(NSUInteger, MBXOfflineMapDownloaderState) {
 *   @param imageQuality The image quality to when requesting tiles. */
 - (void)beginDownloadingMapID:(NSString *)mapID mapRegion:(MKCoordinateRegion)mapRegion minimumZ:(NSInteger)minimumZ maximumZ:(NSInteger)maximumZ includeMetadata:(BOOL)includeMetadata includeMarkers:(BOOL)includeMarkers imageQuality:(MBXRasterImageQuality)imageQuality;
 
+/** Creates a map database that doesn't contain any tile/marker data or metadata.
+*   Useful for when you need a database to download to later, but don't have any data for it yet.
+*   @param mapID The map ID of the database.
+*   @param imageQuality The image quality of the database.
+*   @return nil if the creation failed or the imageQuality parameter is inconsistent with an existing database, the database otherwise. */
+- (MBXOfflineMapDatabase *)createEmptyMapDatabaseWithMapID:(NSString *)mapID imageQuality:(MBXRasterImageQuality)imageQuality error:(NSError **)error;
+
 /** Cancels the current offline map download job and discards any associated resources. */
 - (void)cancel;
 

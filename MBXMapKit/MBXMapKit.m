@@ -52,6 +52,7 @@ NSInteger const MBXMapKitErrorCodeDownloadingCanceled = -3;
 NSInteger const MBXMapKitErrorCodeOfflineMapHasNoDataForURL = -4;
 NSInteger const MBXMapKitErrorCodeOfflineMapSqlite = -5;
 NSInteger const MBXMapKitErrorCodeURLSessionConnectivity = -6;
+NSInteger const MBXMapKitErrorCodeOfflineMapIncompatibleMetadata = -7;
 
 #pragma mark - Global configuration
 
@@ -130,6 +131,10 @@ NSInteger const MBXMapKitErrorCodeURLSessionConnectivity = -6;
     return [NSError errorWithDomain:MBXMapKitErrorDomain code:code userInfo:userInfo];
 }
 
++ (NSError *)mbx_errorCannotCreateOfflineMapDatabaseWithID:(NSString *)mapID becauseOfIncompatibleMetadata:(NSString *)metadataName
+{
+    return [NSError mbx_errorWithCode:MBXMapKitErrorCodeOfflineMapIncompatibleMetadata reason:[NSString stringWithFormat:@"Unable to create database from mapID \"%@\": metadata \"%@\" is incompatible with existing database", mapID, metadataName] description:@"Failed to create offline map database"];
+}
 
 + (NSError *)mbx_errorCannotOpenOfflineMapDatabase:(NSString *)path sqliteError:(const char *)sqliteError
 {
