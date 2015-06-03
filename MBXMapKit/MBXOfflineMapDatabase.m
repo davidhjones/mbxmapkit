@@ -252,12 +252,7 @@
 
 - (BOOL)setData:(NSData *)data forURL:(NSURL *)url
 {
-    return [self setData:data forURL:url withStatus:200];
-}
-
-- (BOOL)setData:(NSData *)data forURL:(NSURL *)url withStatus:(int)status
-{
-    NSString *queryString = [NSString stringWithFormat:@"INSERT OR REPLACE INTO resources (url, status, data) VALUES (?, %d, ?);", status];
+    NSString *queryString = @"INSERT OR REPLACE INTO resources (url, data) VALUES (?, ?);";
     return [self executeNoDataStatement:queryString withArguments:@[[url absoluteString], data]];
 }
 
@@ -484,7 +479,7 @@ cleanup:
         NSMutableString *createQuery = [[NSMutableString alloc] init];
         [createQuery appendString:@"BEGIN TRANSACTION;\n"];
         [createQuery appendString:@"CREATE TABLE metadata (name TEXT UNIQUE, value TEXT);\n"];
-        [createQuery appendString:@"CREATE TABLE resources (url TEXT UNIQUE, status TEXT, data BLOB);\n"];
+        [createQuery appendString:@"CREATE TABLE resources (url TEXT UNIQUE, data BLOB);\n"];
         [createQuery appendString:@"COMMIT;"];
         BOOL querySuccess = [self executeNoDataQuery:createQuery];
         
