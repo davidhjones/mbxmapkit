@@ -53,6 +53,12 @@ extern NSInteger const MBXMapKitErrorCodeDictionaryMissingKeys;
 *   @param fullyRendered This parameter is set to `YES` if the overlay was able to render all tiles completely or `NO` if errors prevented all tiles from being rendered. */
 - (void)tileOverlayDidFinishRendering:(MBXRasterTileOverlay *)overlay fullyRendered:(BOOL)fullyRendered;
 
+/** Notifies the delegate that the map has accessed the tile at the given location.
+    @param overlay The raster tile overlay that accessed the data.
+    @param url The url of the tile that was fetched.
+    @param db The database from which the URL was fetched, or nil if the tile was pulled from the network. */
+- (void)tileOverlay:(MBXRasterTileOverlay *)overlay didAccessTileForURL:(NSURL *)url fromDatabase:(MBXOfflineMapDatabase *)db;
+
 @end
 
 

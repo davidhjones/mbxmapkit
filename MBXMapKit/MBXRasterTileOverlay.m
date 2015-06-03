@@ -469,7 +469,15 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, BOOL cached, N
     }
 }
 
-
+- (void)notifyDelegateThatURL:(NSURL *)url wasLoadedFromDatabase:(MBXOfflineMapDatabase *)db
+{
+    if ([_delegate respondsToSelector:@selector(tileOverlay:didAccessTileForURL:fromDatabase:)])
+    {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [_delegate tileOverlay:self didAccessTileForURL:url fromDatabase:db];
+        });
+    }
+}
 
 #pragma mark - Methods for asynchronous loading of metadata and markers
 
@@ -717,6 +725,7 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, BOOL cached, N
             if (workerBlock) workerBlock(data, &error);
         }
         completionHandler(data, TRUE, error);
+        [self notifyDelegateThatURL:urlForThisDatabase wasLoadedFromDatabase:database];
 
         foundDataOffline = TRUE;
 
@@ -765,6 +774,7 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, BOOL cached, N
                                    }
 
                                    completionHandler(data, FALSE, outError);
+                                   [self notifyDelegateThatURL:url wasLoadedFromDatabase:nil];
 
                                    if (outError)
                                    {
