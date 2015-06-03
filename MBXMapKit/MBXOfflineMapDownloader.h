@@ -187,6 +187,11 @@ extern NSString* const MBXMapKitOfflineTileDownloadedNotification;
 /** Suspends a currently running offline map download job. */
 - (void)suspend;
 
+/** @name Retrieving Offline Maps */
+
+/** A convenience method that returns the database corresponding to the map ID given, or nil if no such database exists. */
+- (MBXOfflineMapDatabase *)offlineMapDatabaseWithMapID:(NSString *)mapID;
+
 /** @name Removing Offline Maps */
 
 /** Invalidates a given offline map and removes its associated backing database on disk. This is designed for managing the disk storage consumed by offline maps.
