@@ -245,6 +245,11 @@
     return count == 1;
 }
 
+- (BOOL)removeDataForURL:(NSURL *)url
+{
+    return [self executeNoDataStatement:@"DELETE FROM resources WHERE url=?" withArguments:@[[url absoluteString]]];
+}
+
 - (BOOL)setData:(NSData *)data forURL:(NSURL *)url
 {
     return [self setData:data forURL:url withStatus:200];
@@ -252,17 +257,8 @@
 
 - (BOOL)setData:(NSData *)data forURL:(NSURL *)url withStatus:(int)status
 {
-    BOOL alreadyIn = [self isAlreadyDataForURL:url];
-    NSString *queryString;
-    if (alreadyIn)
-    {
-        queryString = [NSString stringWithFormat:@"UPDATE resources SET status=(%d),data=?001 WHERE url=?002;", status];
-    }
-    else
-    {
-        queryString = [NSString stringWithFormat:@"INSERT INTO resources (url, status, data) VALUES (?002, %d, ?001);", status];
-    }
-    return [self executeNoDataStatement:queryString withArguments:@[data, [url absoluteString]]];
+    NSString *queryString = [NSString stringWithFormat:@"INSERT OR REPLACE INTO resources (url, status, data) VALUES (?, %d, ?);", status];
+    return [self executeNoDataStatement:queryString withArguments:@[[url absoluteString], data]];
 }
 
 - (BOOL)executeNoDataQuery:(NSString *)query
