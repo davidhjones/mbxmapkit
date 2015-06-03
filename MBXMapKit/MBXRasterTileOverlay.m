@@ -35,8 +35,6 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, BOOL cached, N
 
 @interface MBXOfflineMapDatabase ()
 
-- (NSData *)dataForURL:(NSURL *)url withError:(NSError **)error;
-- (BOOL)setData:(NSData *)data forURL:(NSURL *)url;
 - (void) closeDatabaseIfNeeded;
 
 @end

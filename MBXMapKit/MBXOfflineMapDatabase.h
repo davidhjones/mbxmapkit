@@ -46,6 +46,21 @@
 /** The filesystem path of the database. */
 @property (readonly, nonatomic) NSString *path;
 
+/** @name Manipulating data */
+
+/** Returns the NSData* for the given URL in the database.
+    @param error Contains an error describing what went wrong, or nil if no error occurred.
+    @return The data, or nil if the data could not be retrieved. */
+- (NSData *)dataForURL:(NSURL *)url withError:(NSError **)error;
+/** Returns TRUE if data already exists for the given URL in the database. */
+- (BOOL)isAlreadyDataForURL:(NSURL *)url;
+/** Removes data for the given url in the database.
+    @return TRUE if the removal was successful. */
+- (BOOL)removeDataForURL:(NSURL *)url;
+/** Sets the given data for the given URL in the database.
+    @return TRUE if the insertion was successful. */
+- (BOOL)setData:(NSData *)data forURL:(NSURL *)url;
+
 - (instancetype)init UNAVAILABLE_ATTRIBUTE;
 
 @end

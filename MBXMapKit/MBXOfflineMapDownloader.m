@@ -43,8 +43,6 @@ NSString* const MBXMapKitOfflineTileDownloadedNotification = @"MBXMapKitOfflineT
 - (instancetype)initWithPath:(NSString *)path mapID:(NSString *)mapID metadata:(NSDictionary *)metadata withError:(NSError **)error;
 - (void)invalidate;
 - (void)updateMetadata:(NSDictionary *)metadata withError:(NSError **)error;
-- (BOOL)isAlreadyDataForURL:(NSURL *)url;
-- (BOOL)setData:(NSData *)data forURL:(NSURL *)url;
 - (void)closeDatabaseIfNeeded;
 
 @end
