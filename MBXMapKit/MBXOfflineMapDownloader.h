@@ -58,6 +58,11 @@ extern NSString* const MBXMapKitOfflineTileDownloadedNotification;
 *   @param totalFilesExpectedToWrite An estimated count of the number of resources that will be downloaded. This is primarily determined from the map region and zoom limits which were used to begin a download job, but it also potentially includes JSON and marker icon resources. */
 - (void)offlineMapDownloader:(MBXOfflineMapDownloader *)offlineMapDownloader totalFilesWritten:(NSUInteger)totalFilesWritten totalFilesExpectedToWrite:(NSUInteger)totalFilesExpectedToWrite;
 
+/** Notifies the delegate that a tile URL was downloadeded or verified to already be in the database.
+    @param offlineMapDownloader The offline map downloader.
+    @param url The URL of the tile that was downloaded or verified. */
+- (void)offlineMapDownloader:(MBXOfflineMapDownloader *)offlineMapDownloader downloadedOrCheckedTileWithURL:(NSURL *)url;
+
 /** @name Ending Download Jobs */
 
 /** Notifies the delegate that something unexpected, but not necessarily bad, has happened. This is designed to provide an opportunity to recognize potential configuration problems with your map. For example, you might receive an HTTP 404 response for a map tile if you request a map region which extends outside of your map data's coverage area. 

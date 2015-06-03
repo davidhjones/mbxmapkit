@@ -313,6 +313,15 @@ NSString* const MBXMapKitOfflineTileDownloadedNotification = @"MBXMapKitOfflineT
     }
 }
 
+- (void)notifyDelegateOfDownloadedOrCheckedTileWithURL:(NSURL *)url
+{
+    if ([_delegate respondsToSelector:@selector(offlineMapDownloader:downloadedOrCheckedTileWithURL:)])
+    {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [_delegate offlineMapDownloader:self downloadedOrCheckedTileWithURL:url];
+        });
+    }
+}
 
 #pragma mark - Implementation: download urls
 
@@ -362,6 +371,7 @@ NSString* const MBXMapKitOfflineTileDownloadedNotification = @"MBXMapKitOfflineT
         BOOL alreadyHasData = [_downloadingDatabase isAlreadyDataForURL:nextUrl];
         
         void (^finish)() = ^ {
+            [self notifyDelegateOfDownloadedOrCheckedTileWithURL:nextUrl];
             if (_state != MBXOfflineMapDownloaderStateCanceling && _state != MBXOfflineMapDownloaderStateAvailable)
             {
                 [self markOneFileDownloaded];
