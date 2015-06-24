@@ -503,6 +503,16 @@ NSString* const MBXMapKitOfflineTileDownloadedNotification = @"MBXMapKitOfflineT
 }
 
 #pragma mark - API: Begin an offline map download
+- (NSUInteger)tileCountForMapRegion:(MKCoordinateRegion)mapRegion minimumZ:(NSInteger)minimumZ maximumZ:(NSInteger)maximumZ
+{
+    CLLocationDegrees minLat = mapRegion.center.latitude - (mapRegion.span.latitudeDelta / 2.0);
+    CLLocationDegrees maxLat = minLat + mapRegion.span.latitudeDelta;
+    CLLocationDegrees minLon = mapRegion.center.longitude - (mapRegion.span.longitudeDelta / 2.0);
+    CLLocationDegrees maxLon = minLon + mapRegion.span.longitudeDelta;
+    MBXOfflineMapURLGenerator * generator = [[MBXOfflineMapURLGenerator alloc] initWithMinLat:minLat maxLat:maxLat minLon:minLon maxLon:maxLon minimumZ:minimumZ maximumZ:maximumZ];
+    return [generator urlCount];
+}
+
 - (MBXOfflineMapDatabase *)createEmptyMapDatabaseWithMapID:(NSString *)mapID imageQuality:(MBXRasterImageQuality)imageQuality error:(NSError **)error
 {
     MBXOfflineMapDatabase *db = [self offlineMapDatabaseWithMapID:mapID];

@@ -183,6 +183,8 @@ extern NSString* const MBXMapKitOfflineTileDownloadedNotification;
 *   @return nil if the creation failed or the imageQuality parameter is inconsistent with an existing database, the database otherwise. */
 - (MBXOfflineMapDatabase *)createEmptyMapDatabaseWithMapID:(NSString *)mapID imageQuality:(MBXRasterImageQuality)imageQuality error:(NSError **)error;
 
+- (NSUInteger)tileCountForMapRegion:(MKCoordinateRegion)mapRegion minimumZ:(NSInteger)minimumZ maximumZ:(NSInteger)maximumZ;
+
 /** Cancels the current offline map download job and discards any associated resources. */
 - (void)cancel;
 
