@@ -725,7 +725,9 @@ typedef void (^MBXRasterTileOverlayCompletionBlock)(NSData *data, BOOL cached, N
             if (workerBlock) workerBlock(data, &error);
         }
         completionHandler(data, TRUE, error);
-        [self notifyDelegateThatURL:urlForThisDatabase wasLoadedFromDatabase:database];
+        if (data) {
+            [self notifyDelegateThatURL:urlForThisDatabase wasLoadedFromDatabase:database];
+        }
 
         foundDataOffline = TRUE;
 
