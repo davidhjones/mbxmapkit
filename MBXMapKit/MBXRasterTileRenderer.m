@@ -13,7 +13,7 @@
 
 @property (nonatomic) NSMutableArray *tiles;
 @property (nonatomic) NSMutableSet *activeDownloads;
-//@property (nonatomic) NSData *blankTileData;
+@property (nonatomic) NSData *blankTileData;
 
 @end
 
@@ -27,10 +27,10 @@
     self = [super initWithOverlay:overlay];
 
     if (self) {
-//        MKTileOverlay *tileOverlay = (MKTileOverlay*)[self overlay];
-//        UIGraphicsBeginImageContext([tileOverlay tileSize]);
-//        _blankTileData = UIImagePNGRepresentation(UIGraphicsGetImageFromCurrentImageContext());
-//        UIGraphicsEndImageContext();
+        MKTileOverlay *tileOverlay = (MKTileOverlay*)[self overlay];
+        UIGraphicsBeginImageContext([tileOverlay tileSize]);
+        _blankTileData = UIImagePNGRepresentation(UIGraphicsGetImageFromCurrentImageContext());
+        UIGraphicsEndImageContext();
     
         _tiles = [NSMutableArray new];
 
@@ -234,9 +234,9 @@
                 @synchronized(weakSelf) {
                     [weakSelf.activeDownloads removeObject:xyzQueue];
                 }
-//                if (!tileData) {
-//                    tileData = _blankTileData;
-//                }
+                if (!tileData) {
+                    tileData = _blankTileData;
+                }
                 
                 if (tileData) {
                     NSData *tileDataCopy = [[NSData alloc] initWithBytes:tileData.bytes length:tileData.length];
